@@ -1,0 +1,240 @@
+import { defineStore } from 'pinia'
+import api from '@/services/api'
+
+export const useGameStore = defineStore('game', {
+  state: () => ({
+    // Available lines
+    allLines: [],
+    selectedLines: [],
+    
+    // Game state
+    startStation: '',
+    endStation: '',
+    userPath: [],
+    
+    // Results
+    systemPaths: [],
+    shortestCost: 0,
+    validationResult: null,
+    showAnswer: false, // 是否显示答案
+    
+    // UI state
+    gameStatus: 'setup', // setup, playing, result
+    loading: false,
+    error: null,
+  }),
+
+  getters: {
+    hasSelectedLines: (state) => state.selectedLines.length > 0,
+    hasStations: (state) => state.startStation && state.endStation,
+    canSubmit: (state) => state.userPath.length >= 2,
+    isPlaying: (state) => state.gameStatus === 'playing' || state.gameStatus === 'result',
+    displayCost: (state) => {
+      if (!state.shortestCost) return 0
+      // 精确到整数，.5 则进 1
+      return Math.ceil(state.shortestCost)
+    },
+  },
+
+  actions: {
+    async loadLines() {
+      try {
+        this.loading = true
+        this.error = null
+        const response = await api.getLines()
+        this.allLines = response.data
+      } catch (error) {
+        this.error = 'Failed to load metro lines'
+        console.error(error)
+      } finally {
+        this.loading = false
+      }
+    },
+
+    toggleLine(lineName) {
+      const index = this.selectedLines.indexOf(lineName)
+      if (index > -1) {
+        this.selectedLines.splice(index, 1)
+      } else {
+        this.selectedLines.push(lineName)
+      }
+    },
+
+    selectAllLines() {
+      this.selectedLines = [...this.allLines]
+    },
+
+    clearLines() {
+      this.selectedLines = []
+    },
+
+    async generateRandomStations() {
+      if (!this.hasSelectedLines) {
+        this.error = 'Please select at least one line'
+        return
+      }
+
+      try {
+        this.loading = true
+        this.error = null
+        
+        // 清除之前的答案状态
+        this.userPath = []
+        this.validationResult = null
+        this.showAnswer = false
+        
+        const response = await api.randomStations(this.selectedLines)
+        this.startStation = response.data.start
+        this.endStation = response.data.end
+        // 同时获取最短路径的 cost
+        const pathResponse = await api.calculatePath(
+          this.selectedLines,
+          response.data.start,
+          response.data.end
+        )
+        this.shortestCost = pathResponse.data.shortest_cost
+        this.systemPaths = pathResponse.data.paths
+        this.gameStatus = 'playing'
+      } catch (error) {
+        this.error = 'Failed to generate random stations'
+        console.error(error)
+      } finally {
+        this.loading = false
+      }
+    },
+
+    async setStations(start, end) {
+      this.startStation = start
+      this.endStation = end
+      if (start && end) {
+        try {
+          this.loading = true
+          this.error = null
+          
+          // 清除之前的答案状态
+          this.userPath = []
+          this.validationResult = null
+          this.showAnswer = false
+          
+          // 获取最短路径的 cost
+          const pathResponse = await api.calculatePath(
+            this.selectedLines,
+            start,
+            end
+          )
+          this.shortestCost = pathResponse.data.shortest_cost
+          this.systemPaths = pathResponse.data.paths
+          this.gameStatus = 'playing'
+        } catch (error) {
+          this.error = 'Failed to calculate path'
+          console.error(error)
+        } finally {
+          this.loading = false
+        }
+      }
+    },
+
+    addStation(station) {
+      if (station && !this.userPath.includes(station)) {
+        this.userPath.push(station)
+      }
+    },
+
+    insertStation(station, index) {
+      // 在指定位置插入站点
+      if (station && !this.userPath.includes(station)) {
+        this.userPath.splice(index, 0, station)
+      }
+    },
+
+    removeStation(index) {
+      this.userPath.splice(index, 1)
+    },
+
+    clearPath() {
+      this.userPath = []
+    },
+
+    async submitPath() {
+      if (!this.canSubmit) {
+        this.error = 'Path must have at least 2 stations'
+        return
+      }
+
+      try {
+        this.loading = true
+        this.error = null
+        const response = await api.validatePath(
+          this.selectedLines,
+          this.startStation,
+          this.endStation,
+          this.userPath
+        )
+        this.validationResult = response.data
+        this.shortestCost = response.data.shortest_cost
+        this.systemPaths = response.data.all_shortest_paths
+        // 只有答对时才显示答案
+        this.showAnswer = response.data.is_shortest
+        // 答对时才切换到 result 状态，答错时保持 playing 状态允许继续修改
+        if (response.data.is_shortest) {
+          this.gameStatus = 'result'
+        }
+        // 答错时保持 playing 状态，不清空用户路径
+      } catch (error) {
+        this.error = 'Failed to validate path'
+        console.error(error)
+      } finally {
+        this.loading = false
+      }
+    },
+
+    revealAnswer() {
+      this.showAnswer = true
+    },
+
+    async fetchAndRevealAnswer() {
+      try {
+        this.loading = true
+        this.error = null
+        // 如果还没有获取过答案，先获取
+        if (this.systemPaths.length === 0) {
+          const pathResponse = await api.calculatePath(
+            this.selectedLines,
+            this.startStation,
+            this.endStation
+          )
+          this.shortestCost = pathResponse.data.shortest_cost
+          this.systemPaths = pathResponse.data.paths
+        }
+        this.showAnswer = true
+      } catch (error) {
+        this.error = 'Failed to fetch answer'
+        console.error(error)
+      } finally {
+        this.loading = false
+      }
+    },
+
+    resetGame() {
+      this.startStation = ''
+      this.endStation = ''
+      this.userPath = []
+      this.systemPaths = []
+      this.shortestCost = 0
+      this.validationResult = null
+      this.showAnswer = false
+      this.gameStatus = 'setup'
+      this.error = null
+    },
+
+    newGame() {
+      this.userPath = []
+      this.systemPaths = []
+      this.shortestCost = 0
+      this.validationResult = null
+      this.showAnswer = false
+      this.gameStatus = 'setup'
+      this.error = null
+    }
+  }
+})
