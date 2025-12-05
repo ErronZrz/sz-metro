@@ -19,11 +19,11 @@
     <!-- Your Path -->
     <div class="p-4 bg-gray-50 rounded-lg">
       <h4 class="font-semibold text-gray-700 mb-2">你的路径:</h4>
-      <p class="text-gray-600">{{ gameStore.userPath.join(' → ') }}</p>
+      <p class="text-gray-600" v-html="formatPathWithTransfers(gameStore.validationResult?.user_path_annotated || gameStore.userPath.join(' → '))"></p>
     </div>
 
     <!-- All Shortest Paths (答对时自动显示) -->
-    <div v-if="gameStore.systemPaths.length > 0" class="p-4 bg-blue-50 rounded-lg">
+    <div v-if="gameStore.systemPaths.length > 0" class="p-4 bg-blue-50 rounded-lg border-2 border-blue-300">
       <h4 class="font-semibold text-blue-700 mb-3">
         ✅ 所有最短路径 (共 {{ gameStore.systemPaths.length }} 条):
       </h4>
@@ -40,18 +40,12 @@
     </div>
 
     <!-- Action Buttons -->
-    <div class="flex gap-4">
+    <div class="text-center">
       <button
         @click="handleNewGame"
-        class="flex-1 px-6 py-3 bg-metro-primary text-white rounded-lg hover:bg-blue-700 transition font-medium"
+        class="px-8 py-3 bg-metro-primary text-white rounded-lg hover:bg-blue-700 transition font-medium"
       >
-        🔄 再来一局
-      </button>
-      <button
-        @click="handleReset"
-        class="flex-1 px-6 py-3 bg-gray-300 text-gray-700 rounded-lg hover:bg-gray-400 transition font-medium"
-      >
-        🏠 返回首页
+        🎮 再来一局
       </button>
     </div>
   </div>

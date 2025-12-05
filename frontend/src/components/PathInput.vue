@@ -31,6 +31,12 @@
              }">
             💪 请在下方继续修改你的路径，然后重新提交
           </p>
+          <!-- 显示用户路径的换乘信息（仅当路径合法但非最优时） -->
+          <div v-if="gameStore.validationResult.valid && gameStore.validationResult.user_path_annotated" 
+               class="mt-3 p-2 bg-white rounded border border-yellow-200">
+            <p class="text-xs text-gray-500 mb-1">你的路径：</p>
+            <p class="text-sm text-gray-600" v-html="formatPathWithTransfers(gameStore.validationResult.user_path_annotated)"></p>
+          </div>
         </div>
         <button
           @click="gameStore.validationResult = null"
@@ -70,35 +76,21 @@
       <h3 class="text-sm font-medium text-gray-700 mb-3">当前路径 ({{ gameStore.userPath.length }} 站):</h3>
       <p class="text-xs text-gray-500 mb-3">💡 点击站点之间的 <span class="text-green-600 font-bold">+</span> 可以插入新站点</p>
       <div class="flex flex-wrap items-center gap-1">
-        <!-- 首站前的插入按钮 -->
-        <button
-          v-if="insertIndex !== 0"
-          @click="startInsert(0)"
-          class="w-6 h-6 flex items-center justify-center text-green-500 hover:text-green-700 hover:bg-green-100 rounded-full transition text-lg font-bold"
-          title="在此处插入站点"
-        >
-          +
-        </button>
-        <!-- 首站前的插入输入框 -->
-        <div v-if="insertIndex === 0" class="flex items-center gap-1">
-          <input
-            ref="insertInputRef"
-            v-model="insertStation"
-            @keyup.enter="confirmInsert"
-            @keyup.escape="cancelInsert"
-            type="text"
-            placeholder="输入站名"
-            class="w-24 px-2 py-1 text-sm border border-green-400 rounded focus:ring-2 focus:ring-green-400 focus:border-transparent"
-          />
-          <button @click="confirmInsert" class="text-green-600 hover:text-green-800 text-sm">✓</button>
-          <button @click="cancelInsert" class="text-gray-400 hover:text-gray-600 text-sm">✕</button>
-        </div>
-
         <template v-for="(station, index) in gameStore.userPath" :key="index">
           <!-- 站点标签 -->
-          <div class="flex items-center gap-1 px-3 py-2 bg-white border border-gray-300 rounded-lg">
+          <div 
+            class="flex items-center gap-1 px-3 py-2 rounded-lg"
+            :class="{
+              'bg-blue-100 border-2 border-blue-400': index === 0 || index === gameStore.userPath.length - 1,
+              'bg-white border border-gray-300': index !== 0 && index !== gameStore.userPath.length - 1
+            }"
+          >
+            <span v-if="index === 0" class="text-xs text-blue-600 mr-1">起</span>
+            <span v-if="index === gameStore.userPath.length - 1" class="text-xs text-blue-600 mr-1">终</span>
             <span class="text-sm font-medium">{{ station }}</span>
+            <!-- 只有中间站点可以删除 -->
             <button
+              v-if="index !== 0 && index !== gameStore.userPath.length - 1"
               @click="gameStore.removeStation(index)"
               class="text-red-500 hover:text-red-700 ml-1"
               title="删除此站"
@@ -107,9 +99,9 @@
             </button>
           </div>
           
-          <!-- 站点后的插入按钮（非最后一站才显示） -->
+          <!-- 站点后的插入按钮（在终点前的所有位置都可以插入） -->
           <template v-if="index < gameStore.userPath.length - 1">
-            <!-- 插入按钮 -->
+            <!-- 插入按钮（只要不是最后一站，都显示插入按钮，允许在终点前插入） -->
             <button
               v-if="insertIndex !== index + 1"
               @click="startInsert(index + 1)"
@@ -178,16 +170,16 @@
           <p class="text-sm text-gray-600" v-html="formatPathWithTransfers(pathData)"></p>
         </div>
       </div>
-      
-      <!-- 再来一局按钮 -->
-      <div class="mt-4 text-center">
-        <button
-          @click="gameStore.resetGame()"
-          class="px-8 py-3 bg-metro-secondary text-white rounded-lg hover:bg-green-700 transition font-medium"
-        >
-          🎮 再来一局
-        </button>
-      </div>
+    </div>
+
+    <!-- 再来一局按钮（查看答案后显示，放在框外） -->
+    <div v-if="gameStore.showAnswer" class="text-center">
+      <button
+        @click="gameStore.resetGame()"
+        class="px-8 py-3 bg-metro-primary text-white rounded-lg hover:bg-blue-700 transition font-medium"
+      >
+        🎮 再来一局
+      </button>
     </div>
 
     <!-- Hint -->

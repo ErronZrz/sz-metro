@@ -94,6 +94,8 @@ export const useGameStore = defineStore('game', {
         )
         this.shortestCost = pathResponse.data.shortest_cost
         this.systemPaths = pathResponse.data.paths
+        // 自动填写起点和终点
+        this.userPath = [this.startStation, this.endStation]
         this.gameStatus = 'playing'
       } catch (error) {
         this.error = 'Failed to generate random stations'
@@ -124,6 +126,8 @@ export const useGameStore = defineStore('game', {
           )
           this.shortestCost = pathResponse.data.shortest_cost
           this.systemPaths = pathResponse.data.paths
+          // 自动填写起点和终点
+          this.userPath = [this.startStation, this.endStation]
           this.gameStatus = 'playing'
         } catch (error) {
           this.error = 'Failed to calculate path'
@@ -136,7 +140,13 @@ export const useGameStore = defineStore('game', {
 
     addStation(station) {
       if (station && !this.userPath.includes(station)) {
-        this.userPath.push(station)
+        // 游戏进行中时，插入到终点之前；否则直接添加到末尾
+        if (this.gameStatus === 'playing' && this.userPath.length >= 2) {
+          // 插入到倒数第二的位置（终点之前）
+          this.userPath.splice(this.userPath.length - 1, 0, station)
+        } else {
+          this.userPath.push(station)
+        }
       }
     },
 
@@ -148,11 +158,20 @@ export const useGameStore = defineStore('game', {
     },
 
     removeStation(index) {
+      // 禁止删除起点（第一站）和终点（最后一站）
+      if (index === 0 || index === this.userPath.length - 1) {
+        return
+      }
       this.userPath.splice(index, 1)
     },
 
     clearPath() {
-      this.userPath = []
+      // 保留起点和终点，只清空中间站点
+      if (this.startStation && this.endStation) {
+        this.userPath = [this.startStation, this.endStation]
+      } else {
+        this.userPath = []
+      }
     },
 
     async submitPath() {

@@ -1,0 +1,35 @@
+version: '3.8'
+
+services:
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: sz-metro-backend
+    restart: unless-stopped
+    expose:
+      - "8000"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    networks:
+      - sz-metro-network
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: sz-metro-frontend
+    restart: unless-stopped
+    ports:
+      - "8099:80"
+    depends_on:
+      - backend
+    networks:
+      - sz-metro-network
+
+networks:
+  sz-metro-network:
+    driver: bridge

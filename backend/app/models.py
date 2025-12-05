@@ -27,6 +27,7 @@ class ValidationResponse(BaseModel):
     shortest_cost: float
     message: str
     error_reason: Optional[str] = None  # Detailed error reason
+    user_path_annotated: Optional[str] = None  # User path with transfer annotations
     all_shortest_paths: List  # Can be List[str] or formatted with transfers
 
 class RandomStationsResponse(BaseModel):

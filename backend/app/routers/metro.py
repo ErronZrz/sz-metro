@@ -150,6 +150,7 @@ async def validate_path(request: ValidatePathRequest):
                 shortest_cost=float(shortest_cost),
                 message="路径不合法",
                 error_reason=error_reason,
+                user_path_annotated=None,
                 all_shortest_paths=[]
             )
         
@@ -160,6 +161,9 @@ async def validate_path(request: ValidatePathRequest):
         
         # Annotate shortest paths with transfer information
         annotated_paths = [metro_network.annotate_path_with_transfers(path) for path in shortest_paths]
+        
+        # Annotate user path with transfer information
+        user_path_annotated = metro_network.annotate_path_with_transfers(request.user_path)
         
         if is_shortest:
             message = "恭喜！这是最短路径之一！"
@@ -175,6 +179,7 @@ async def validate_path(request: ValidatePathRequest):
             shortest_cost=float(shortest_cost),
             message=message,
             error_reason=error_reason,
+            user_path_annotated=user_path_annotated,
             all_shortest_paths=annotated_paths
         )
     except ValueError as e:
