@@ -36,3 +36,7 @@ class RandomStationsResponse(BaseModel):
 
 class StationsResponse(BaseModel):
     stations: List[str]
+
+class ReachableStationsRequest(BaseModel):
+    lines: List[str]
+    start: str

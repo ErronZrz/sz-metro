@@ -90,6 +90,28 @@ class MetroNetwork:
         
         return False
     
+    def get_reachable_stations(self, start: str) -> Set[str]:
+        """Get all stations reachable from start station"""
+        if self.graph is None:
+            raise RuntimeError("Please build graph first")
+        
+        if start not in self.graph:
+            raise ValueError(f"Station {start} not found in current graph")
+        
+        stack = [start]
+        visited = {start}
+        
+        while stack:
+            u = stack.pop()
+            for nb in self.graph[u]:
+                if nb not in visited:
+                    visited.add(nb)
+                    stack.append(nb)
+        
+        # Exclude start station itself
+        visited.discard(start)
+        return visited
+    
     def pick_two_random_stations(self) -> Tuple[str, str]:
         """Randomly pick two reachable stations"""
         if self.graph is None:
@@ -122,13 +144,56 @@ class MetroNetwork:
             raise RuntimeError("No valid connected component")
         
         comp = random.choice(components)
-        return random.sample(comp, 2)
+        result = random.sample(comp, 2)
+        return (result[0], result[1])
     
-    def annotate_path_with_transfers(self, path: List[str]) -> str:
-        """Annotate path with transfer information"""
+    def annotate_path_with_transfers(self, path: List[str], line_sequence: List[str]) -> str:
+        """
+        Annotate path with transfer information.
+        
+        Args:
+            path: List of station names
+            line_sequence: Optional pre-computed optimal line sequence from PathFinder.analyze_path_optimal()
+                          If provided, uses this sequence; otherwise falls back to greedy selection.
+        
+        Returns:
+            Annotated path string with transfer information
+        """
         if not path or self.station_lines is None:
             return " → ".join(path)
         
+        # If line_sequence is provided, use it directly
+        if line_sequence is not None and len(line_sequence) == len(path):
+            return self._annotate_with_line_sequence(path, line_sequence)
+        
+        # Fallback to greedy selection (for backward compatibility)
+        return self._annotate_greedy(path)
+    
+    def _annotate_with_line_sequence(self, path: List[str], line_sequence: List[str]) -> str:
+        """Annotate path using pre-computed optimal line sequence"""
+        annotated = []
+        
+        for i in range(len(path)):
+            station = path[i]
+            current_line = line_sequence[i]
+            
+            if i == 0:
+                annotated.append(station)
+            else:
+                prev_line = line_sequence[i - 1]
+                
+                # Check if transfer happened at previous station
+                if prev_line is not None and current_line is not None and prev_line != current_line:
+                    # Add transfer annotation to previous station
+                    annotated[-1] = f"{annotated[-1]}({prev_line}换乘{current_line})"
+                
+                annotated.append(station)
+        
+        return " → ".join(annotated)
+    
+    def _annotate_greedy(self, path: List[str]) -> str:
+        """Annotate path using greedy line selection (fallback method)"""
+        assert self.station_lines is not None
         annotated = []
         prev_line = None
         
@@ -147,11 +212,27 @@ class MetroNetwork:
             if not common_lines:
                 current_line = None
             else:
-                # Prefer to continue on the same line
-                if prev_line in common_lines:
-                    current_line = prev_line
+                # Filter to only lines where stations are adjacent
+                valid_lines = []
+                for line_name in common_lines:
+                    line_stations = self.lines[line_name]
+                    try:
+                        u_idx = line_stations.index(prev_station)
+                        v_idx = line_stations.index(station)
+                        # Check if stations are adjacent on this line
+                        if abs(u_idx - v_idx) == 1:
+                            valid_lines.append(line_name)
+                    except ValueError:
+                        continue
+                
+                if not valid_lines:
+                    current_line = None
                 else:
-                    current_line = sorted(common_lines)[0]
+                    # Prefer to continue on the same line
+                    if prev_line in valid_lines:
+                        current_line = prev_line
+                    else:
+                        current_line = sorted(valid_lines)[0]
             
             # Check if transfer happened at previous station
             if prev_line is not None and current_line is not None and prev_line != current_line:

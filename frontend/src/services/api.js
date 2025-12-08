@@ -34,6 +34,11 @@ export default {
     return api.get('/stations', { params })
   },
 
+  // Get reachable stations from start station
+  getReachableStations(lines, start) {
+    return api.post('/game/reachable-stations', { lines, start })
+  },
+
   // Generate random start and end stations
   randomStations(lines) {
     return api.post('/game/random-stations', { lines })

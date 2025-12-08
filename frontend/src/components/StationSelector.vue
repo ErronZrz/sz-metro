@@ -4,34 +4,24 @@
       <!-- Start Station -->
       <div>
         <label class="block text-sm font-medium text-gray-700 mb-2">起点站</label>
-        <input
-          v-model="gameStore.startStation"
-          type="text"
-          placeholder="输入起点站名"
-          :disabled="isLocked"
-          :class="[
-            'w-full px-4 py-2 border rounded-lg',
-            isLocked 
-              ? 'border-gray-200 bg-gray-100 text-gray-500 cursor-not-allowed' 
-              : 'border-gray-300 focus:ring-2 focus:ring-metro-primary focus:border-transparent'
-          ]"
+        <SearchableSelect
+          :value="gameStore.startStation"
+          :options="gameStore.availableStations"
+          :disabled="isLocked || !gameStore.hasSelectedLines"
+          :placeholder="startPlaceholder"
+          @update:value="handleStartChange"
         />
       </div>
 
       <!-- End Station -->
       <div>
         <label class="block text-sm font-medium text-gray-700 mb-2">终点站</label>
-        <input
-          v-model="gameStore.endStation"
-          type="text"
-          placeholder="输入终点站名"
-          :disabled="isLocked"
-          :class="[
-            'w-full px-4 py-2 border rounded-lg',
-            isLocked 
-              ? 'border-gray-200 bg-gray-100 text-gray-500 cursor-not-allowed' 
-              : 'border-gray-300 focus:ring-2 focus:ring-metro-primary focus:border-transparent'
-          ]"
+        <SearchableSelect
+          :value="gameStore.endStation"
+          :options="gameStore.reachableStations"
+          :disabled="isLocked || !gameStore.startStation"
+          :placeholder="endPlaceholder"
+          @update:value="handleEndChange"
         />
       </div>
     </div>
@@ -39,7 +29,8 @@
     <div v-if="!isLocked" class="flex gap-4">
       <button
         @click="handleRandomStations"
-        class="flex-1 px-6 py-3 bg-metro-secondary text-white rounded-lg hover:bg-green-700 transition font-medium"
+        :disabled="!gameStore.hasSelectedLines"
+        class="flex-1 px-6 py-3 bg-metro-secondary text-white rounded-lg hover:bg-green-700 transition font-medium disabled:opacity-50 disabled:cursor-not-allowed"
       >
         🎲 随机生成起终点
       </button>
@@ -65,13 +56,46 @@
 </template>
 
 <script setup>
-import { computed } from 'vue'
+import { computed, watch, ref } from 'vue'
 import { useGameStore } from '@/stores/game'
+import SearchableSelect from './SearchableSelect.vue'
 
 const gameStore = useGameStore()
 
-// 游戏进行中或结果页时锁定站点选择
+// Game in progress or result page locks station selection
 const isLocked = computed(() => gameStore.gameStatus === 'playing' || gameStore.gameStatus === 'result')
+
+// Placeholder texts
+const startPlaceholder = computed(() => {
+  if (!gameStore.hasSelectedLines) return '请先选择线路'
+  if (gameStore.availableStations.length === 0) return '加载中...'
+  return '输入关键字搜索起点站'
+})
+
+const endPlaceholder = computed(() => {
+  if (!gameStore.startStation) return '请先选择起点站'
+  if (gameStore.reachableStations.length === 0) return '加载中...'
+  return '输入关键字搜索终点站'
+})
+
+// Watch for line selection changes to load available stations
+watch(
+  () => gameStore.selectedLines,
+  async (newLines) => {
+    if (newLines.length > 0) {
+      await gameStore.loadAvailableStations()
+    }
+  },
+  { immediate: true, deep: true }
+)
+
+const handleStartChange = async (station) => {
+  await gameStore.setStartStation(station)
+}
+
+const handleEndChange = (station) => {
+  gameStore.setEndStation(station)
+}
 
 const handleRandomStations = async () => {
   await gameStore.generateRandomStations()

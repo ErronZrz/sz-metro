@@ -49,17 +49,22 @@
     </div>
 
     <!-- Input Area -->
-    <div class="flex gap-2">
-      <input
-        v-model="currentStation"
-        @keyup.enter="addStation"
-        type="text"
-        placeholder="输入站名后按回车添加"
-        class="flex-1 px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-metro-primary focus:border-transparent"
-      />
+    <div class="flex gap-2 items-end">
+      <div class="flex-1">
+        <label class="block text-sm font-medium text-gray-700 mb-1">添加站点</label>
+        <SearchableSelect
+          :value="currentStation"
+          :options="gameStore.availableStations"
+          :disabled="gameStore.availableStations.length === 0"
+          placeholder="搜索并选择站点"
+          @update:value="handleStationSelect"
+          @confirm="handleStationConfirm"
+        />
+      </div>
       <button
         @click="addStation"
-        class="px-6 py-2 bg-metro-primary text-white rounded-lg hover:bg-blue-700 transition"
+        :disabled="!currentStation"
+        class="px-6 py-2 bg-metro-primary text-white rounded-lg hover:bg-blue-700 transition disabled:bg-gray-300 disabled:cursor-not-allowed"
       >
         添加
       </button>
@@ -110,17 +115,18 @@
             >
               +
             </button>
-            <!-- 插入输入框 -->
+            <!-- 插入下拉选择框 -->
             <div v-if="insertIndex === index + 1" class="flex items-center gap-1">
-              <input
-                ref="insertInputRef"
-                v-model="insertStation"
-                @keyup.enter="confirmInsert"
-                @keyup.escape="cancelInsert"
-                type="text"
-                placeholder="输入站名"
-                class="w-24 px-2 py-1 text-sm border border-green-400 rounded focus:ring-2 focus:ring-green-400 focus:border-transparent"
-              />
+              <div class="w-36">
+                <SearchableSelect
+                  :value="insertStation"
+                  :options="gameStore.availableStations"
+                  placeholder="搜索站点"
+                  size="small"
+                  @update:value="handleInsertSelect"
+                  @confirm="handleInsertConfirm"
+                />
+              </div>
               <button @click="confirmInsert" class="text-green-600 hover:text-green-800 text-sm">✓</button>
               <button @click="cancelInsert" class="text-gray-400 hover:text-gray-600 text-sm">✕</button>
             </div>
@@ -194,6 +200,7 @@
 <script setup>
 import { ref, nextTick } from 'vue'
 import { useGameStore } from '@/stores/game'
+import SearchableSelect from './SearchableSelect.vue'
 
 const gameStore = useGameStore()
 const currentStation = ref('')
@@ -201,7 +208,32 @@ const currentStation = ref('')
 // 插入功能的状态
 const insertIndex = ref(null)  // 当前插入位置，null 表示没有在插入
 const insertStation = ref('')  // 要插入的站名
-const insertInputRef = ref(null)  // 插入输入框的引用
+
+// 处理站点选择
+const handleStationSelect = (station) => {
+  currentStation.value = station
+}
+
+// 处理站点确认（回车直接添加）
+const handleStationConfirm = (station) => {
+  if (station && station.trim()) {
+    gameStore.addStation(station.trim())
+    currentStation.value = ''
+  }
+}
+
+// 处理插入站点选择
+const handleInsertSelect = (station) => {
+  insertStation.value = station
+}
+
+// 处理插入站点确认（回车直接插入）
+const handleInsertConfirm = (station) => {
+  if (station && station.trim() && insertIndex.value !== null) {
+    gameStore.insertStation(station.trim(), insertIndex.value)
+    cancelInsert()
+  }
+}
 
 const addStation = () => {
   if (currentStation.value.trim()) {
@@ -214,12 +246,6 @@ const addStation = () => {
 const startInsert = async (index) => {
   insertIndex.value = index
   insertStation.value = ''
-  await nextTick()
-  // 自动聚焦到输入框
-  if (insertInputRef.value) {
-    const input = Array.isArray(insertInputRef.value) ? insertInputRef.value[0] : insertInputRef.value
-    input?.focus()
-  }
 }
 
 // 确认插入

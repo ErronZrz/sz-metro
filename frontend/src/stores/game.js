@@ -7,6 +7,10 @@ export const useGameStore = defineStore('game', {
     allLines: [],
     selectedLines: [],
     
+    // Station selection
+    availableStations: [],  // All stations in selected lines
+    reachableStations: [],  // Stations reachable from start station
+    
     // Game state
     startStation: '',
     endStation: '',
@@ -58,14 +62,100 @@ export const useGameStore = defineStore('game', {
       } else {
         this.selectedLines.push(lineName)
       }
+      // Validate and clear stations if needed
+      this.validateAndClearStations()
     },
 
     selectAllLines() {
       this.selectedLines = [...this.allLines]
+      // Validate and clear stations if needed
+      this.validateAndClearStations()
     },
 
     clearLines() {
       this.selectedLines = []
+      // Clear stations when lines are cleared
+      this.clearStationSelection()
+    },
+
+    clearStationSelection() {
+      this.startStation = ''
+      this.endStation = ''
+      this.availableStations = []
+      this.reachableStations = []
+    },
+
+    async validateAndClearStations() {
+      // If no lines selected, clear everything
+      if (this.selectedLines.length === 0) {
+        this.clearStationSelection()
+        return
+      }
+
+      // Load available stations for current lines
+      await this.loadAvailableStations()
+
+      // Check if start station is still valid
+      if (this.startStation && !this.availableStations.includes(this.startStation)) {
+        this.startStation = ''
+        this.endStation = ''
+        this.reachableStations = []
+        return
+      }
+
+      // If start station is valid, reload reachable stations
+      if (this.startStation) {
+        await this.loadReachableStations()
+        
+        // Check if end station is still reachable
+        if (this.endStation && !this.reachableStations.includes(this.endStation)) {
+          this.endStation = ''
+        }
+      }
+    },
+
+    async loadAvailableStations() {
+      if (!this.hasSelectedLines) {
+        this.availableStations = []
+        return
+      }
+
+      try {
+        const response = await api.getStations(this.selectedLines)
+        this.availableStations = response.data.stations
+      } catch (error) {
+        console.error('Failed to load available stations:', error)
+        this.availableStations = []
+      }
+    },
+
+    async loadReachableStations() {
+      if (!this.hasSelectedLines || !this.startStation) {
+        this.reachableStations = []
+        return
+      }
+
+      try {
+        const response = await api.getReachableStations(this.selectedLines, this.startStation)
+        this.reachableStations = response.data.stations
+      } catch (error) {
+        console.error('Failed to load reachable stations:', error)
+        this.reachableStations = []
+      }
+    },
+
+    async setStartStation(station) {
+      this.startStation = station
+      this.endStation = ''  // Clear end station when start changes
+      if (station) {
+        await this.loadReachableStations()
+      } else {
+        this.reachableStations = []
+      }
+    },
+
+    setEndStation(station) {
+      this.endStation = station
     },
 
     async generateRandomStations() {
@@ -237,6 +327,8 @@ export const useGameStore = defineStore('game', {
     resetGame() {
       this.startStation = ''
       this.endStation = ''
+      this.availableStations = []
+      this.reachableStations = []
       this.userPath = []
       this.systemPaths = []
       this.shortestCost = 0
@@ -247,6 +339,9 @@ export const useGameStore = defineStore('game', {
     },
 
     newGame() {
+      this.startStation = ''
+      this.endStation = ''
+      this.reachableStations = []
       this.userPath = []
       this.systemPaths = []
       this.shortestCost = 0

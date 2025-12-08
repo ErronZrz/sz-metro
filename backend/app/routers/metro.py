@@ -8,7 +8,8 @@ from app.models import (
     PathResponse,
     ValidatePathRequest,
     ValidationResponse,
-    StationsResponse
+    StationsResponse,
+    ReachableStationsRequest
 )
 from app.services.metro_network import MetroNetwork
 from app.services.path_finder import PathFinder
@@ -75,6 +76,27 @@ async def random_stations(request: RandomStationsRequest):
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@router.post("/game/reachable-stations", response_model=StationsResponse)
+async def reachable_stations(request: ReachableStationsRequest):
+    """Get all stations reachable from start station within selected lines"""
+    try:
+        metro_network.build_graph(request.lines)
+        
+        # Validate start station exists
+        all_stations = metro_network.get_all_stations()
+        if request.start not in all_stations:
+            raise HTTPException(status_code=400, detail=f"Start station not found: {request.start}")
+        
+        reachable = metro_network.get_reachable_stations(request.start)
+        return StationsResponse(stations=sorted(reachable))
+    except HTTPException:
+        raise
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @router.post("/game/calculate-path", response_model=PathResponse)
 async def calculate_path(request: CalculatePathRequest):
     """Calculate shortest paths between two stations"""
@@ -99,8 +121,11 @@ async def calculate_path(request: CalculatePathRequest):
         if not paths:
             raise HTTPException(status_code=400, detail="No path found")
         
-        # Annotate paths with transfer information
-        annotated_paths = [metro_network.annotate_path_with_transfers(path) for path in paths]
+        # Annotate paths with optimal transfer information
+        annotated_paths = []
+        for path in paths:
+            _, line_seq = path_finder.analyze_path_optimal(path)
+            annotated_paths.append(metro_network.annotate_path_with_transfers(path, line_seq))
         
         return PathResponse(
             shortest_cost=float(cost),
@@ -154,16 +179,19 @@ async def validate_path(request: ValidatePathRequest):
                 all_shortest_paths=[]
             )
         
-        # Calculate costs
-        user_cost = path_finder.calculate_path_cost(request.user_path)
+        # Calculate user path cost and optimal line sequence (single computation)
+        user_cost, user_line_sequence = path_finder.analyze_path_optimal(request.user_path)
         
         is_shortest = (user_cost == shortest_cost)
         
         # Annotate shortest paths with transfer information
-        annotated_paths = [metro_network.annotate_path_with_transfers(path) for path in shortest_paths]
+        annotated_paths = []
+        for path in shortest_paths:
+            _, line_seq = path_finder.analyze_path_optimal(path)
+            annotated_paths.append(metro_network.annotate_path_with_transfers(path, line_seq))
         
-        # Annotate user path with transfer information
-        user_path_annotated = metro_network.annotate_path_with_transfers(request.user_path)
+        # Annotate user path with optimal line sequence (reusing computed result)
+        user_path_annotated = metro_network.annotate_path_with_transfers(request.user_path, user_line_sequence)
         
         if is_shortest:
             message = "恭喜！这是最短路径之一！"
