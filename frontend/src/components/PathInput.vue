@@ -119,16 +119,16 @@
             <div v-if="insertIndex === index + 1" class="flex items-center gap-1">
               <div class="w-36">
                 <SearchableSelect
+                  :ref="el => setInsertSelectRef(el, index + 1)"
                   :value="insertStation"
-                  :options="gameStore.availableStations"
+                  :options="insertAvailableStations"
                   placeholder="搜索站点"
                   size="small"
                   @update:value="handleInsertSelect"
                   @confirm="handleInsertConfirm"
+                  @cancel="cancelInsert"
                 />
               </div>
-              <button @click="confirmInsert" class="text-green-600 hover:text-green-800 text-sm">✓</button>
-              <button @click="cancelInsert" class="text-gray-400 hover:text-gray-600 text-sm">✕</button>
             </div>
           </template>
         </template>
@@ -198,7 +198,7 @@
 </template>
 
 <script setup>
-import { ref, nextTick } from 'vue'
+import { ref, computed, nextTick } from 'vue'
 import { useGameStore } from '@/stores/game'
 import SearchableSelect from './SearchableSelect.vue'
 
@@ -208,6 +208,20 @@ const currentStation = ref('')
 // 插入功能的状态
 const insertIndex = ref(null)  // 当前插入位置，null 表示没有在插入
 const insertStation = ref('')  // 要插入的站名
+const insertSelectRefs = ref({})  // 存储各个插入位置的 SearchableSelect 引用
+const insertJustStarted = ref(false)  // 防止刚开始插入就被取消
+
+// 插入时可用的站点（排除已在路径中的站点）
+const insertAvailableStations = computed(() => {
+  return gameStore.availableStations.filter(station => !gameStore.userPath.includes(station))
+})
+
+// 设置插入选择框的引用
+const setInsertSelectRef = (el, index) => {
+  if (el) {
+    insertSelectRefs.value[index] = el
+  }
+}
 
 // 处理站点选择
 const handleStationSelect = (station) => {
@@ -227,11 +241,37 @@ const handleInsertSelect = (station) => {
   insertStation.value = station
 }
 
-// 处理插入站点确认（回车直接插入）
-const handleInsertConfirm = (station) => {
+// 处理插入站点确认（选中即插入，并自动进入下一个插入位置）
+const handleInsertConfirm = async (station) => {
   if (station && station.trim() && insertIndex.value !== null) {
-    gameStore.insertStation(station.trim(), insertIndex.value)
-    cancelInsert()
+    const trimmedStation = station.trim()
+    // Check if station already exists in path
+    if (gameStore.userPath.includes(trimmedStation)) {
+      return  // Station already in path, don't insert
+    }
+    
+    const currentInsertIndex = insertIndex.value
+    gameStore.insertStation(trimmedStation, currentInsertIndex)
+    insertStation.value = ''
+    
+    // Auto-advance to next insert position (after the just-inserted station)
+    // The new station is now at currentInsertIndex, so next insert position is currentInsertIndex + 1
+    const nextInsertIndex = currentInsertIndex + 1
+    
+    // Check if next position is valid (not after the last station / end station)
+    if (nextInsertIndex < gameStore.userPath.length) {
+      insertIndex.value = nextInsertIndex
+      // Wait for DOM update then focus the new input
+      await nextTick()
+      // Need to wait a bit more for the new SearchableSelect to be mounted
+      await nextTick()
+      const selectRef = insertSelectRefs.value[nextInsertIndex]
+      if (selectRef && selectRef.focus) {
+        selectRef.focus()
+      }
+    } else {
+      cancelInsert()
+    }
   }
 }
 
@@ -244,22 +284,32 @@ const addStation = () => {
 
 // 开始在指定位置插入
 const startInsert = async (index) => {
+  // Set flag to prevent immediate cancellation from click outside event
+  insertJustStarted.value = true
   insertIndex.value = index
   insertStation.value = ''
-}
-
-// 确认插入
-const confirmInsert = () => {
-  if (insertStation.value.trim() && insertIndex.value !== null) {
-    gameStore.insertStation(insertStation.value.trim(), insertIndex.value)
+  // Wait for DOM update then focus the input
+  await nextTick()
+  await nextTick()  // Need extra tick for component to mount
+  const selectRef = insertSelectRefs.value[index]
+  if (selectRef && selectRef.focus) {
+    selectRef.focus()
   }
-  cancelInsert()
+  // Reset flag after a short delay to allow click event to complete
+  setTimeout(() => {
+    insertJustStarted.value = false
+  }, 100)
 }
 
 // 取消插入
 const cancelInsert = () => {
+  // Ignore cancel if insert was just started (prevents immediate cancellation from click outside)
+  if (insertJustStarted.value) {
+    return
+  }
   insertIndex.value = null
   insertStation.value = ''
+  insertSelectRefs.value = {}
 }
 
 const handleSubmit = async () => {

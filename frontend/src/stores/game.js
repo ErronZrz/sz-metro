@@ -33,6 +33,10 @@ export const useGameStore = defineStore('game', {
     hasStations: (state) => state.startStation && state.endStation,
     canSubmit: (state) => state.userPath.length >= 2,
     isPlaying: (state) => state.gameStatus === 'playing' || state.gameStatus === 'result',
+    // Selected lines sorted by the order in allLines (JSON order)
+    sortedSelectedLines: (state) => {
+      return state.allLines.filter(line => state.selectedLines.includes(line))
+    },
     displayCost: (state) => {
       if (!state.shortestCost) return 0
       // 精确到整数，.5 则进 1

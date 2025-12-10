@@ -43,7 +43,7 @@
     <div v-if="gameStore.hasSelectedLines" class="mt-4 p-4 bg-green-50 border border-green-200 rounded-lg">
       <p class="text-green-700">
         ✅ 已选择 {{ gameStore.selectedLines.length }} 条线路: 
-        <span class="font-semibold">{{ gameStore.selectedLines.join(', ') }}</span>
+        <span class="font-semibold">{{ gameStore.sortedSelectedLines.join(', ') }}</span>
       </p>
     </div>
   </div>

@@ -3,6 +3,7 @@
     <!-- Input Field -->
     <div class="relative">
       <input
+        ref="inputRef"
         type="text"
         :value="displayValue"
         @input="handleInput"
@@ -95,9 +96,10 @@ const props = defineProps({
   }
 })
 
-const emit = defineEmits(['update:value', 'confirm'])
+const emit = defineEmits(['update:value', 'confirm', 'cancel'])
 
 const containerRef = ref(null)
+const inputRef = ref(null)
 const isOpen = ref(false)
 const searchQuery = ref('')
 const highlightedIndex = ref(0)
@@ -228,8 +230,18 @@ const closeDropdown = () => {
 const handleClickOutside = (event) => {
   if (containerRef.value && !containerRef.value.contains(event.target)) {
     closeDropdown()
+    emit('cancel')  // Notify parent that selection was cancelled
   }
 }
+
+// Expose focus method for parent component
+const focus = () => {
+  if (inputRef.value) {
+    inputRef.value.focus()
+  }
+}
+
+defineExpose({ focus })
 
 // Reset highlighted index when filtered options change
 watch(filteredOptions, () => {
