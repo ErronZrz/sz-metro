@@ -1,6 +1,8 @@
 # -*- coding: utf-8 -*-
 from fastapi import APIRouter, HTTPException
 from typing import List
+import json
+import os
 from app.models import (
     RandomStationsRequest,
     RandomStationsResponse,
@@ -212,5 +214,34 @@ async def validate_path(request: ValidatePathRequest):
         )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# Load station coordinates data (lazy loading)
+_station_coordinates_data = None
+
+def get_station_coordinates_data():
+    """Load station coordinates from JSON file"""
+    global _station_coordinates_data
+    if _station_coordinates_data is None:
+        base_dir = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
+        coords_file = os.path.join(base_dir, 'stations_coordinates.json')
+        with open(coords_file, 'r', encoding='utf-8') as f:
+            _station_coordinates_data = json.load(f)
+    return _station_coordinates_data
+
+
+@router.get("/map/coordinates")
+async def get_map_coordinates():
+    """Get station coordinates and line information for map visualization"""
+    try:
+        data = get_station_coordinates_data()
+        return {
+            "stations": data.get("stations", {}),
+            "lines": data.get("lines", {})
+        }
+    except FileNotFoundError:
+        raise HTTPException(status_code=500, detail="Station coordinates data not found")
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

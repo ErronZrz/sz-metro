@@ -328,10 +328,9 @@ export const useGameStore = defineStore('game', {
       }
     },
 
-    resetGame() {
+    async resetGame() {
       this.startStation = ''
       this.endStation = ''
-      this.availableStations = []
       this.reachableStations = []
       this.userPath = []
       this.systemPaths = []
@@ -340,9 +339,13 @@ export const useGameStore = defineStore('game', {
       this.showAnswer = false
       this.gameStatus = 'setup'
       this.error = null
+      // Reload available stations to ensure search works properly
+      if (this.hasSelectedLines) {
+        await this.loadAvailableStations()
+      }
     },
 
-    newGame() {
+    async newGame() {
       this.startStation = ''
       this.endStation = ''
       this.reachableStations = []
@@ -353,6 +356,10 @@ export const useGameStore = defineStore('game', {
       this.showAnswer = false
       this.gameStatus = 'setup'
       this.error = null
+      // Reload available stations to ensure search works properly
+      if (this.hasSelectedLines) {
+        await this.loadAvailableStations()
+      }
     }
   }
 })

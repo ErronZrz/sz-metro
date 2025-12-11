@@ -1,5 +1,32 @@
 <template>
   <div class="space-y-6">
+    <!-- Metro Map Visualization (Answer Mode) -->
+    <div class="mb-4">
+      <MetroMap
+        mode="answer"
+        :startStation="gameStore.startStation"
+        :endStation="gameStore.endStation"
+        :path="mapPath"
+      />
+    </div>
+
+    <!-- All Shortest Paths (答对时自动显示，紧跟在地图下方) -->
+    <div v-if="gameStore.systemPaths.length > 0" class="p-4 bg-blue-50 rounded-lg border-2 border-blue-300">
+      <h4 class="font-semibold text-blue-700 mb-3">
+        ✅ 所有最短路径 (共 {{ gameStore.systemPaths.length }} 条):
+      </h4>
+      <div class="space-y-2">
+        <div
+          v-for="(pathData, index) in gameStore.systemPaths"
+          :key="index"
+          class="p-3 bg-white rounded border border-blue-200"
+        >
+          <p class="text-sm font-medium text-blue-600 mb-1">路径 {{ index + 1 }}:</p>
+          <p class="text-sm text-gray-600" v-html="formatPathWithTransfers(pathData)"></p>
+        </div>
+      </div>
+    </div>
+
     <!-- Result Message (只显示答对的情况) -->
     <div class="p-6 rounded-lg border-2 bg-green-50 border-green-500">
       <h3 class="text-2xl font-bold mb-2 text-green-700">
@@ -22,23 +49,6 @@
       <p class="text-gray-600" v-html="formatPathWithTransfers(gameStore.validationResult?.user_path_annotated || gameStore.userPath.join(' → '))"></p>
     </div>
 
-    <!-- All Shortest Paths (答对时自动显示) -->
-    <div v-if="gameStore.systemPaths.length > 0" class="p-4 bg-blue-50 rounded-lg border-2 border-blue-300">
-      <h4 class="font-semibold text-blue-700 mb-3">
-        ✅ 所有最短路径 (共 {{ gameStore.systemPaths.length }} 条):
-      </h4>
-      <div class="space-y-2">
-        <div
-          v-for="(pathData, index) in gameStore.systemPaths"
-          :key="index"
-          class="p-3 bg-white rounded border border-blue-200"
-        >
-          <p class="text-sm font-medium text-blue-600 mb-1">路径 {{ index + 1 }}:</p>
-          <p class="text-sm text-gray-600" v-html="formatPathWithTransfers(pathData)"></p>
-        </div>
-      </div>
-    </div>
-
     <!-- Action Buttons -->
     <div class="text-center">
       <button
@@ -52,9 +62,26 @@
 </template>
 
 <script setup>
+import { computed } from 'vue'
 import { useGameStore } from '@/stores/game'
+import MetroMap from './MetroMap.vue'
 
 const gameStore = useGameStore()
+
+// Map path: use the first system path for visualization
+const mapPath = computed(() => {
+  if (gameStore.systemPaths.length > 0) {
+    const firstPath = gameStore.systemPaths[0]
+    if (typeof firstPath === 'string') {
+      // String format: "站A → 站B(换乘X号线) → 站C"
+      return firstPath.split(' → ').map(s => s.replace(/\([^)]*\)/g, '').trim())
+    } else if (Array.isArray(firstPath)) {
+      // Array format: [{station: '站A'}, {station: '站B', transfer: 'X号线'}]
+      return firstPath.map(item => typeof item === 'object' ? item.station : item)
+    }
+  }
+  return []
+})
 
 const handleNewGame = () => {
   gameStore.newGame()

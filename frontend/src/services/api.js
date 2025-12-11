@@ -57,5 +57,10 @@ export default {
       end,
       user_path: userPath
     })
+  },
+
+  // Get map coordinates for visualization
+  getMapCoordinates() {
+    return api.get('/map/coordinates')
   }
 }

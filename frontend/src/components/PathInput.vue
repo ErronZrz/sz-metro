@@ -1,5 +1,32 @@
 <template>
   <div class="space-y-4">
+    <!-- Metro Map Visualization (Question Mode) -->
+    <div class="mb-4">
+      <MetroMap
+        :mode="gameStore.showAnswer ? 'answer' : 'question'"
+        :startStation="gameStore.startStation"
+        :endStation="gameStore.endStation"
+        :path="mapPath"
+      />
+    </div>
+
+    <!-- All Shortest Paths (查看答案后显示，紧跟在地图下方) -->
+    <div v-if="gameStore.showAnswer && gameStore.systemPaths.length > 0" class="p-4 bg-blue-50 rounded-lg border-2 border-blue-300">
+      <h4 class="font-semibold text-blue-700 mb-3">
+        ✅ 所有最短路径 (共 {{ gameStore.systemPaths.length }} 条):
+      </h4>
+      <div class="space-y-2">
+        <div
+          v-for="(pathData, index) in gameStore.systemPaths"
+          :key="index"
+          class="p-3 bg-white rounded border border-blue-200"
+        >
+          <p class="text-sm font-medium text-blue-600 mb-1">路径 {{ index + 1 }}:</p>
+          <p class="text-sm text-gray-600" v-html="formatPathWithTransfers(pathData)"></p>
+        </div>
+      </div>
+    </div>
+
     <!-- Error Message (温和提示) -->
     <div v-if="gameStore.validationResult && !gameStore.validationResult.is_shortest" 
          class="p-4 rounded-lg border-2"
@@ -161,23 +188,6 @@
       </button>
     </div>
 
-    <!-- All Shortest Paths (查看答案后显示) -->
-    <div v-if="gameStore.showAnswer && gameStore.systemPaths.length > 0" class="p-4 bg-blue-50 rounded-lg border-2 border-blue-300">
-      <h4 class="font-semibold text-blue-700 mb-3">
-        ✅ 所有最短路径 (共 {{ gameStore.systemPaths.length }} 条):
-      </h4>
-      <div class="space-y-2">
-        <div
-          v-for="(pathData, index) in gameStore.systemPaths"
-          :key="index"
-          class="p-3 bg-white rounded border border-blue-200"
-        >
-          <p class="text-sm font-medium text-blue-600 mb-1">路径 {{ index + 1 }}:</p>
-          <p class="text-sm text-gray-600" v-html="formatPathWithTransfers(pathData)"></p>
-        </div>
-      </div>
-    </div>
-
     <!-- 再来一局按钮（查看答案后显示，放在框外） -->
     <div v-if="gameStore.showAnswer" class="text-center">
       <button
@@ -201,8 +211,26 @@
 import { ref, computed, nextTick } from 'vue'
 import { useGameStore } from '@/stores/game'
 import SearchableSelect from './SearchableSelect.vue'
+import MetroMap from './MetroMap.vue'
 
 const gameStore = useGameStore()
+
+// Map path: when answer is shown, use the first system path; otherwise empty
+const mapPath = computed(() => {
+  if (gameStore.showAnswer && gameStore.systemPaths.length > 0) {
+    // Extract station names from the first system path
+    const firstPath = gameStore.systemPaths[0]
+    if (typeof firstPath === 'string') {
+      // String format: "站A → 站B(换乘X号线) → 站C"
+      return firstPath.split(' → ').map(s => s.replace(/\([^)]*\)/g, '').trim())
+    } else if (Array.isArray(firstPath)) {
+      // Array format: [{station: '站A'}, {station: '站B', transfer: 'X号线'}]
+      return firstPath.map(item => typeof item === 'object' ? item.station : item)
+    }
+  }
+  return []
+})
+
 const currentStation = ref('')
 
 // 插入功能的状态
