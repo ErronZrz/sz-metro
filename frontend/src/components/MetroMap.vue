@@ -442,31 +442,27 @@ const getDashedLineEndpoint = (startSt, endSt) => {
   }
 }
 
-// Calculate label positions for all stations at once to avoid overlaps
-// This considers: nearby stations (not just adjacent), and other label positions
+// Calculate label positions using improved algorithm:
+// 1. Mark all line segments as occupied regions
+// 2. For each station, select label position based on:
+//    - Avoid occupied regions (lines and existing labels)
+//    - For straight lines (angle > 150°): prefer perpendicular direction
+//    - For corners (angle <= 150°): prefer angle bisector's reverse direction
+//    - Avoid same direction as previous station's label
 const labelPositions = computed(() => {
   const path = pathStations.value
   const result = {}
   const placedLabels = [] // Track placed label bounding boxes
   
-  // Estimate text width based on character count (approximate)
-  const estimateTextWidth = (text) => {
-    // Chinese characters are wider, roughly 16px per char at font-size 16
-    return text.length * 14
-  }
+  // === Utility functions ===
   
-  // Check if two bounding boxes overlap
-  const boxesOverlap = (box1, box2) => {
-    return !(box1.right < box2.left || 
-             box1.left > box2.right || 
-             box1.bottom < box2.top || 
-             box1.top > box2.bottom)
-  }
+  // Estimate text dimensions
+  const estimateTextWidth = (text) => text.length * 14
+  const textHeight = 16
   
-  // Get label bounding box given station coord, offset, anchor, and text
+  // Get label bounding box based on position offset and anchor
   const getLabelBox = (coord, offset, anchor, text) => {
     const textWidth = estimateTextWidth(text)
-    const textHeight = 16 // font-size
     const x = coord.x + offset.x
     const y = coord.y + offset.y
     
@@ -477,76 +473,128 @@ const labelPositions = computed(() => {
     } else if (anchor === 'end') {
       left = x - textWidth
       right = x
-    } else { // start
+    } else {
       left = x
       right = x + textWidth
     }
     
-    return {
-      left,
-      right,
-      top: y - textHeight,
-      bottom: y
-    }
+    return { left, right, top: y - textHeight, bottom: y }
   }
   
-  // Calculate overlap penalty with placed labels
-  const calcLabelOverlapPenalty = (coord, offset, anchor, text) => {
-    const box = getLabelBox(coord, offset, anchor, text)
-    let penalty = 0
+  // Check if two boxes overlap
+  const boxesOverlap = (box1, box2, margin = 0) => {
+    return !(box1.right + margin < box2.left || 
+             box1.left - margin > box2.right || 
+             box1.bottom + margin < box2.top || 
+             box1.top - margin > box2.bottom)
+  }
+  
+  // Check if a box intersects with a line segment
+  const boxIntersectsLine = (box, x1, y1, x2, y2, lineThickness = 8) => {
+    const expandedBox = {
+      left: box.left - 2,
+      right: box.right + 2,
+      top: box.top - 2,
+      bottom: box.bottom + 2
+    }
     
-    for (const placed of placedLabels) {
-      if (boxesOverlap(box, placed.box)) {
-        // Calculate overlap area as penalty
-        const overlapWidth = Math.min(box.right, placed.box.right) - Math.max(box.left, placed.box.left)
-        const overlapHeight = Math.min(box.bottom, placed.box.bottom) - Math.max(box.top, placed.box.top)
-        penalty += overlapWidth * overlapHeight
-      }
+    const lineBox = {
+      left: Math.min(x1, x2) - lineThickness,
+      right: Math.max(x1, x2) + lineThickness,
+      top: Math.min(y1, y2) - lineThickness,
+      bottom: Math.max(y1, y2) + lineThickness
     }
-    return penalty
+    
+    if (!boxesOverlap(expandedBox, lineBox)) return false
+    
+    // Use point-to-line-segment distance for accurate check
+    const boxCenterX = (expandedBox.left + expandedBox.right) / 2
+    const boxCenterY = (expandedBox.top + expandedBox.bottom) / 2
+    const boxHalfW = (expandedBox.right - expandedBox.left) / 2
+    const boxHalfH = (expandedBox.bottom - expandedBox.top) / 2
+    
+    const dx = x2 - x1
+    const dy = y2 - y1
+    const segLenSq = dx * dx + dy * dy
+    
+    if (segLenSq === 0) {
+      const distX = Math.abs(x1 - boxCenterX)
+      const distY = Math.abs(y1 - boxCenterY)
+      return distX <= boxHalfW + lineThickness && distY <= boxHalfH + lineThickness
+    }
+    
+    const t = Math.max(0, Math.min(1, ((boxCenterX - x1) * dx + (boxCenterY - y1) * dy) / segLenSq))
+    const closestX = x1 + t * dx
+    const closestY = y1 + t * dy
+    
+    const distX = Math.abs(closestX - boxCenterX)
+    const distY = Math.abs(closestY - boxCenterY)
+    
+    return distX <= boxHalfW + lineThickness && distY <= boxHalfH + lineThickness
   }
   
+  // Normalize a vector
+  const normalize = (v) => {
+    const len = Math.sqrt(v.x * v.x + v.y * v.y)
+    if (len === 0) return { x: 0, y: 0 }
+    return { x: v.x / len, y: v.y / len }
+  }
+  
+  // Calculate angle between two vectors (in radians)
+  const angleBetween = (v1, v2) => {
+    const dot = v1.x * v2.x + v1.y * v2.y
+    // Clamp to avoid floating point errors
+    return Math.acos(Math.max(-1, Math.min(1, dot)))
+  }
+  
+  // Get direction name that best matches a vector direction
+  const getDirectionFromVector = (v) => {
+    const angle = Math.atan2(v.y, v.x) * 180 / Math.PI
+    // angle: -180 to 180, where 0 is right, 90 is down, -90 is up
+    if (angle >= -22.5 && angle < 22.5) return 'right'
+    if (angle >= 22.5 && angle < 67.5) return 'bottom-right'
+    if (angle >= 67.5 && angle < 112.5) return 'bottom'
+    if (angle >= 112.5 && angle < 157.5) return 'bottom-left'
+    if (angle >= 157.5 || angle < -157.5) return 'left'
+    if (angle >= -157.5 && angle < -112.5) return 'top-left'
+    if (angle >= -112.5 && angle < -67.5) return 'top'
+    if (angle >= -67.5 && angle < -22.5) return 'top-right'
+    return 'top' // fallback
+  }
+  
+  // Get perpendicular directions to a line vector
+  const getPerpendicularDirections = (lineVec) => {
+    // Rotate 90 degrees: (x, y) -> (-y, x) and (y, -x)
+    const perp1 = normalize({ x: -lineVec.y, y: lineVec.x })
+    const perp2 = normalize({ x: lineVec.y, y: -lineVec.x })
+    return [getDirectionFromVector(perp1), getDirectionFromVector(perp2)]
+  }
+  
+  // === Step 1: Collect all line segments ===
+  const allLineSegments = []
+  for (let i = 0; i < path.length - 1; i++) {
+    const fromCoord = coordinates.value[path[i]]
+    const toCoord = coordinates.value[path[i + 1]]
+    if (fromCoord && toCoord) {
+      allLineSegments.push({
+        x1: fromCoord.x, y1: fromCoord.y,
+        x2: toCoord.x, y2: toCoord.y
+      })
+    }
+  }
+  
+  // === Step 2: Process each station in order ===
   for (let index = 0; index < path.length; index++) {
     const station = path[index]
     const coord = coordinates.value[station]
     const isEndpointStation = isEndpoint(station)
-    const baseOffsetY = isEndpointStation ? -20 : -16
     
     if (!coord) {
-      result[station] = { x: 0, y: baseOffsetY, anchor: 'middle' }
+      result[station] = { x: 0, y: -16, anchor: 'middle', name: 'top' }
       continue
     }
     
-    // Collect direction vectors from adjacent stations only
-    // We'll compute the angle opening direction for corner/turn cases
-    const prevStation = index > 0 ? path[index - 1] : null
-    const nextStation = index < path.length - 1 ? path[index + 1] : null
-    
-    let prevDir = null
-    let nextDir = null
-    
-    if (prevStation) {
-      const prevCoord = coordinates.value[prevStation]
-      if (prevCoord) {
-        const dx = prevCoord.x - coord.x
-        const dy = prevCoord.y - coord.y
-        const dist = Math.sqrt(dx * dx + dy * dy)
-        if (dist > 0) prevDir = { x: dx / dist, y: dy / dist }
-      }
-    }
-    
-    if (nextStation) {
-      const nextCoord = coordinates.value[nextStation]
-      if (nextCoord) {
-        const dx = nextCoord.x - coord.x
-        const dy = nextCoord.y - coord.y
-        const dist = Math.sqrt(dx * dx + dy * dy)
-        if (dist > 0) nextDir = { x: dx / dist, y: dy / dist }
-      }
-    }
-    
     // Define candidate positions
-    // Adjusted: make top and bottom have similar visual spacing from circle edge
     const topY = isEndpointStation ? -15 : -10
     const bottomY = isEndpointStation ? 27 : 22
     const sideX = isEndpointStation ? 13 : 8
@@ -554,212 +602,165 @@ const labelPositions = computed(() => {
     const cornerTopY = isEndpointStation ? -10 : -6
     const cornerBottomY = isEndpointStation ? 22 : 18
     
-    const positions = [
-      { x: 0, y: topY, anchor: 'middle', name: 'top' },
-      { x: 0, y: bottomY, anchor: 'middle', name: 'bottom' },
-      { x: -sideX, y: 6, anchor: 'end', name: 'left' },
-      { x: sideX, y: 6, anchor: 'start', name: 'right' },
-      { x: -cornerX, y: cornerTopY, anchor: 'end', name: 'top-left' },
-      { x: cornerX, y: cornerTopY, anchor: 'start', name: 'top-right' },
-      { x: -cornerX, y: cornerBottomY, anchor: 'end', name: 'bottom-left' },
-      { x: cornerX, y: cornerBottomY, anchor: 'start', name: 'bottom-right' }
-    ]
-    
-    // If no adjacent stations, default to top
-    if (!prevDir && !nextDir) {
-      const pos = positions[0]
-      result[station] = pos
-      placedLabels.push({
-        station,
-        box: getLabelBox(coord, pos, pos.anchor, station)
-      })
-      continue
+    const positions = {
+      'top': { x: 0, y: topY, anchor: 'middle', name: 'top' },
+      'bottom': { x: 0, y: bottomY, anchor: 'middle', name: 'bottom' },
+      'left': { x: -sideX, y: 6, anchor: 'end', name: 'left' },
+      'right': { x: sideX, y: 6, anchor: 'start', name: 'right' },
+      'top-left': { x: -cornerX, y: cornerTopY, anchor: 'end', name: 'top-left' },
+      'top-right': { x: cornerX, y: cornerTopY, anchor: 'start', name: 'top-right' },
+      'bottom-left': { x: -cornerX, y: cornerBottomY, anchor: 'end', name: 'bottom-left' },
+      'bottom-right': { x: cornerX, y: cornerBottomY, anchor: 'start', name: 'bottom-right' }
     }
     
-    // Calculate the ideal label direction
-    // For a turn/corner: the ideal direction is the angle bisector pointing AWAY from the lines
-    // For a straight line: the ideal direction is perpendicular to the line
-    let idealDir = { x: 0, y: -1 } // default: up
-    let isNearlyHorizontal = false
-    let isNearlyVertical = false
+    // Get adjacent station coordinates
+    const prevCoord = index > 0 ? coordinates.value[path[index - 1]] : null
+    const nextCoord = index < path.length - 1 ? coordinates.value[path[index + 1]] : null
+    const prevStation = index > 0 ? path[index - 1] : null
     
-    // Check line orientation for BOTH directions first (before angle calculation)
-    // This ensures we detect horizontal/vertical lines even with slight angles
-    const checkLineOrientation = (dir) => {
-      if (!dir) return
-      // Horizontal: |y| < 0.4 means angle < ~24° from horizontal (more tolerant)
-      if (Math.abs(dir.y) < 0.4) isNearlyHorizontal = true
-      // Vertical: |x| < 0.4 means angle < ~24° from vertical (more tolerant)
-      if (Math.abs(dir.x) < 0.4) isNearlyVertical = true
-    }
-    
-    // Always check orientation for both directions
-    checkLineOrientation(prevDir)
-    checkLineOrientation(nextDir)
-    
-    // Save original orientation detection for label alternation logic
-    // This is important for tightly packed horizontal/vertical stations
-    const originallyHorizontal = isNearlyHorizontal
-    const originallyVertical = isNearlyVertical
-    
-    // Check for nearby non-adjacent stations (for sharp angle avoidance)
-    // This helps with cases like 翻身-宝安中心-宝体 where 翻身 should avoid 宝体
-    let nearbyStationDir = null
-    for (let j = 0; j < path.length; j++) {
-      if (j === index || j === index - 1 || j === index + 1) continue // Skip self and adjacent
-      const otherCoord = coordinates.value[path[j]]
-      if (!otherCoord) continue
-      const dx = otherCoord.x - coord.x
-      const dy = otherCoord.y - coord.y
-      const dist = Math.sqrt(dx * dx + dy * dy)
-      // If very close (within 50 units), track this direction to avoid
-      if (dist < 50 && dist > 0) {
-        nearbyStationDir = { x: dx / dist, y: dy / dist, dist }
-        break
-      }
-    }
-    
-    if (prevDir && nextDir) {
-      // Both directions exist - calculate angle opening direction
-      // The opening direction is opposite to the sum of the two direction vectors
-      // (sum points into the angle, negative sum points out)
-      const sumX = prevDir.x + nextDir.x
-      const sumY = prevDir.y + nextDir.y
-      const sumLen = Math.sqrt(sumX * sumX + sumY * sumY)
+    // Check if a position is blocked by lines or labels
+    const isPositionBlocked = (posName) => {
+      const pos = positions[posName]
+      const labelBox = getLabelBox(coord, pos, pos.anchor, station)
       
-      if (sumLen > 0.5) {
-        // Significant angle (sharp turn) - use the opposite of sum as ideal direction
-        idealDir = { x: -sumX / sumLen, y: -sumY / sumLen }
-        // For sharp turns, reset horizontal/vertical flags as angle is significant
-        // But only if it's a REAL sharp turn (sumLen > 1.4), not just slight deviation
-        if (sumLen > 1.4) {
-          isNearlyHorizontal = false
-          isNearlyVertical = false
-        }
-      } else {
-        // Nearly straight line (180°) - use perpendicular based on orientation
-        if (isNearlyHorizontal) {
-          // Horizontal line -> label goes top or bottom (exactly vertical)
-          idealDir = { x: 0, y: -1 }
-        } else if (isNearlyVertical) {
-          // Vertical line -> label goes left or right (exactly horizontal)
-          idealDir = { x: -1, y: 0 } // Default to left, will be adjusted by overlap
-        } else {
-          // Diagonal line - use perpendicular
-          idealDir = { x: -prevDir.y, y: prevDir.x }
-          if (idealDir.y > 0) {
-            idealDir = { x: prevDir.y, y: -prevDir.x }
-          }
+      // Check collision with all line segments
+      for (const seg of allLineSegments) {
+        if (boxIntersectsLine(labelBox, seg.x1, seg.y1, seg.x2, seg.y2, 8)) {
+          return true
         }
       }
+      
+      // Check collision with already placed labels
+      for (const placed of placedLabels) {
+        if (boxesOverlap(labelBox, placed.box, 4)) {
+          return true
+        }
+      }
+      
+      return false
+    }
+    
+    // === Determine preferred direction based on geometry ===
+    let preferredDirections = []
+    
+    if (prevCoord && nextCoord) {
+      // Middle station: calculate angle W-X-Y
+      const toW = normalize({ x: prevCoord.x - coord.x, y: prevCoord.y - coord.y })
+      const toY = normalize({ x: nextCoord.x - coord.x, y: nextCoord.y - coord.y })
+      
+      // Angle between vectors (0 to PI)
+      const angle = angleBetween(toW, toY)
+      const angleDegrees = angle * 180 / Math.PI
+      
+      if (angleDegrees > 150) {
+        // Straight line: prefer perpendicular directions
+        // Line direction is average of toW reversed and toY
+        const lineDir = normalize({ x: toY.x - toW.x, y: toY.y - toW.y })
+        preferredDirections = getPerpendicularDirections(lineDir)
+      } else {
+        // Corner: prefer angle bisector's reverse direction
+        // Angle bisector direction: sum of normalized vectors to W and Y
+        const bisector = normalize({ x: toW.x + toY.x, y: toW.y + toY.y })
+        // Reverse of bisector points outward from the corner
+        const outward = { x: -bisector.x, y: -bisector.y }
+        const preferredDir = getDirectionFromVector(outward)
+        preferredDirections = [preferredDir]
+        
+        // Also add adjacent directions as alternatives
+        const adjacentDirs = {
+          'top': ['top-left', 'top-right'],
+          'bottom': ['bottom-left', 'bottom-right'],
+          'left': ['top-left', 'bottom-left'],
+          'right': ['top-right', 'bottom-right'],
+          'top-left': ['top', 'left'],
+          'top-right': ['top', 'right'],
+          'bottom-left': ['bottom', 'left'],
+          'bottom-right': ['bottom', 'right']
+        }
+        preferredDirections = preferredDirections.concat(adjacentDirs[preferredDir] || [])
+      }
+    } else if (prevCoord) {
+      // End station (only has prev): prefer direction away from prev
+      const toPrev = { x: prevCoord.x - coord.x, y: prevCoord.y - coord.y }
+      const awayDir = normalize({ x: -toPrev.x, y: -toPrev.y })
+      preferredDirections = getPerpendicularDirections(normalize(toPrev))
+      // Also add the "away" direction
+      preferredDirections.unshift(getDirectionFromVector(awayDir))
+    } else if (nextCoord) {
+      // Start station (only has next): prefer direction away from next
+      const toNext = { x: nextCoord.x - coord.x, y: nextCoord.y - coord.y }
+      const awayDir = normalize({ x: -toNext.x, y: -toNext.y })
+      preferredDirections = getPerpendicularDirections(normalize(toNext))
+      preferredDirections.unshift(getDirectionFromVector(awayDir))
     } else {
-      // Only one direction - use perpendicular
-      const dir = prevDir || nextDir
-      
-      if (isNearlyHorizontal) {
-        idealDir = { x: 0, y: -1 }
-      } else if (isNearlyVertical) {
-        idealDir = { x: -1, y: 0 }
-      } else {
-        idealDir = { x: -dir.y, y: dir.x }
-        if (idealDir.y > 0) {
-          idealDir = { x: dir.y, y: -dir.x }
-        }
-      }
+      // Isolated station: default to top
+      preferredDirections = ['top', 'bottom', 'left', 'right']
     }
     
-    // Score each position
-    let bestPos = positions[0]
+    // === Apply avoidance rule for previous label ===
+    // If previous station's label is in a certain direction, avoid that direction
+    const prevLabelPos = prevStation ? result[prevStation] : null
+    const oppositeDirection = {
+      'top': 'bottom',
+      'bottom': 'top',
+      'left': 'right',
+      'right': 'left',
+      'top-left': 'bottom-right',
+      'top-right': 'bottom-left',
+      'bottom-left': 'top-right',
+      'bottom-right': 'top-left'
+    }
+    
+    // === Score and select best position ===
+    const allDirections = ['top', 'bottom', 'left', 'right', 'top-left', 'top-right', 'bottom-left', 'bottom-right']
+    let bestPos = positions['top']
     let bestScore = -Infinity
     
-    for (const pos of positions) {
-      // Normalize position direction
-      const posLen = Math.sqrt(pos.x * pos.x + (pos.y - 4) * (pos.y - 4))
-      const posDir = posLen > 0 ? { x: pos.x / posLen, y: (pos.y - 4) / posLen } : { x: 0, y: -1 }
+    for (const dirName of allDirections) {
+      let score = 0
       
-      // 1. Alignment with ideal direction (higher = better)
-      const alignmentScore = posDir.x * idealDir.x + posDir.y * idealDir.y
-      
-      // 2. Line avoidance - penalize positions that overlap with line directions
-      let lineOverlapPenalty = 0
-      if (prevDir) {
-        const dot = posDir.x * prevDir.x + posDir.y * prevDir.y
-        if (dot > 0.5) lineOverlapPenalty += dot * 2 // Heavy penalty for being along the line
-      }
-      if (nextDir) {
-        const dot = posDir.x * nextDir.x + posDir.y * nextDir.y
-        if (dot > 0.5) lineOverlapPenalty += dot * 2
+      // Heavy penalty for blocked positions
+      if (isPositionBlocked(dirName)) {
+        score -= 100
       }
       
-      // 3. Label overlap penalty with other labels
-      const labelOverlapPenalty = calcLabelOverlapPenalty(coord, pos, pos.anchor, station)
-      
-      // 4. Calculate position bonus based on line orientation and context
-      let positionBonus = 0
-      const isCardinal = ['top', 'bottom', 'left', 'right'].includes(pos.name)
-      const isCorner = pos.name.includes('-') // top-left, top-right, etc.
-      const isTopOrBottom = pos.name === 'top' || pos.name === 'bottom'
-      const isLeftOrRight = pos.name === 'left' || pos.name === 'right'
-      const isFirstStation = index === 0 && isEndpointStation && !prevDir && nextDir
-      const isLastStation = index === path.length - 1 && isEndpointStation && prevDir && !nextDir
-      const hasOverlap = labelOverlapPenalty > 0
-      
-      // 4a. Base bonus for cardinal positions
-      if (isCardinal) {
-        positionBonus += 0.3
+      // Bonus for preferred directions (higher priority for earlier in list)
+      const preferredIndex = preferredDirections.indexOf(dirName)
+      if (preferredIndex !== -1) {
+        score += 20 - preferredIndex * 3 // First preferred gets +20, second +17, etc.
       }
       
-      // 4b. Avoid nearby non-adjacent stations (sharp angle cases)
-      if (nearbyStationDir) {
-        const dotNearby = posDir.x * nearbyStationDir.x + posDir.y * nearbyStationDir.y
-        if (dotNearby > 0.3) {
-          positionBonus -= dotNearby * 4.0
+      // Avoid same direction as previous label
+      // Match both exact and related directions (e.g., if prev is 'top', avoid 'top', 'top-left', 'top-right')
+      if (prevLabelPos) {
+        const prevDir = prevLabelPos.name
+        // Exact match penalty
+        if (dirName === prevDir) {
+          score -= 10
+        }
+        // Related direction penalty (shares 'top', 'bottom', 'left', or 'right')
+        const prevParts = prevDir.split('-')
+        const currParts = dirName.split('-')
+        for (const part of prevParts) {
+          if (currParts.includes(part) || dirName === part) {
+            score -= 5
+            break
+          }
+        }
+        // Bonus for opposite direction
+        if (dirName === oppositeDirection[prevDir]) {
+          score += 8
         }
       }
       
-      // 4c. Orientation-specific rules (horizontal vs vertical lines)
-      if (originallyHorizontal) {
-        // Horizontal lines: prefer top/bottom, penalize corners
-        if (isTopOrBottom) positionBonus += 0.5
-        if (isCorner) positionBonus -= 3.0
-        
-        // Endpoint positioning: start->left, end->right
-        if (isFirstStation && pos.name === 'left') positionBonus += 3.0
-        if (isLastStation && pos.name === 'right') positionBonus += 3.0
-        
-        // Overlap handling: encourage alternating top/bottom
-        if (hasOverlap) {
-          if (pos.name === 'bottom') positionBonus += 5.0
-          if (pos.name === 'top') positionBonus -= 2.0
-        }
-      } else if (originallyVertical) {
-        // Vertical lines: prefer left/right, penalize corners and top/bottom
-        if (isLeftOrRight) positionBonus += 2.0  // Combined: 0.5 + 1.5
-        if (isTopOrBottom) positionBonus -= 1.0
-        if (isCorner) positionBonus -= 3.0
-        
-        // Endpoint positioning: start->top, end->bottom
-        if (isFirstStation && pos.name === 'top') positionBonus += 3.0
-        if (isLastStation && pos.name === 'bottom') positionBonus += 3.0
-        
-        // Overlap handling: encourage alternating left/right
-        if (hasOverlap) {
-          if (pos.name === 'right') positionBonus += 5.0
-          if (pos.name === 'left') positionBonus -= 2.0
-        }
+      // Slight preference for cardinal directions over corners
+      if (['top', 'bottom', 'left', 'right'].includes(dirName)) {
+        score += 2
       }
-      
-      // 4d. Slight preference for top (natural reading) when no overlap
-      if (!hasOverlap && pos.name === 'top') {
-        positionBonus += 0.1
-      }
-      
-      // Combined score - increased overlap penalty coefficient for better alternation
-      const score = alignmentScore * 1.5 - lineOverlapPenalty - labelOverlapPenalty * 0.1 + positionBonus
       
       if (score > bestScore) {
         bestScore = score
-        bestPos = pos
+        bestPos = positions[dirName]
       }
     }
     
