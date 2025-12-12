@@ -444,11 +444,14 @@ const getDashedLineEndpoint = (startSt, endSt) => {
 
 // Calculate label positions using improved algorithm:
 // 1. Mark all line segments as occupied regions
-// 2. For each station, select label position based on:
-//    - Avoid occupied regions (lines and existing labels)
-//    - For straight lines (angle > 150°): prefer perpendicular direction
-//    - For corners (angle <= 150°): prefer angle bisector's reverse direction
-//    - Avoid same direction as previous station's label
+// 2. For each station D, penalize directions based on nearby line segments:
+//    - Directly penalize the direction of adjacent stations (C and E)
+//    - Traverse backwards (BC, AB, ...) and forwards (EF, FG, ...) to penalize directions
+//      of segments that pass close to D (distance < threshold)
+//    - Stop traversal when a segment is far enough from D
+// 3. Penalize directions used by previous station's label to avoid overlap
+// 4. For straight lines (angle > 150°): prefer perpendicular direction
+// 5. For corners (angle <= 150°): prefer angle bisector's reverse direction
 const labelPositions = computed(() => {
   const path = pathStations.value
   const result = {}
@@ -489,50 +492,6 @@ const labelPositions = computed(() => {
              box1.top - margin > box2.bottom)
   }
   
-  // Check if a box intersects with a line segment
-  const boxIntersectsLine = (box, x1, y1, x2, y2, lineThickness = 8) => {
-    const expandedBox = {
-      left: box.left - 2,
-      right: box.right + 2,
-      top: box.top - 2,
-      bottom: box.bottom + 2
-    }
-    
-    const lineBox = {
-      left: Math.min(x1, x2) - lineThickness,
-      right: Math.max(x1, x2) + lineThickness,
-      top: Math.min(y1, y2) - lineThickness,
-      bottom: Math.max(y1, y2) + lineThickness
-    }
-    
-    if (!boxesOverlap(expandedBox, lineBox)) return false
-    
-    // Use point-to-line-segment distance for accurate check
-    const boxCenterX = (expandedBox.left + expandedBox.right) / 2
-    const boxCenterY = (expandedBox.top + expandedBox.bottom) / 2
-    const boxHalfW = (expandedBox.right - expandedBox.left) / 2
-    const boxHalfH = (expandedBox.bottom - expandedBox.top) / 2
-    
-    const dx = x2 - x1
-    const dy = y2 - y1
-    const segLenSq = dx * dx + dy * dy
-    
-    if (segLenSq === 0) {
-      const distX = Math.abs(x1 - boxCenterX)
-      const distY = Math.abs(y1 - boxCenterY)
-      return distX <= boxHalfW + lineThickness && distY <= boxHalfH + lineThickness
-    }
-    
-    const t = Math.max(0, Math.min(1, ((boxCenterX - x1) * dx + (boxCenterY - y1) * dy) / segLenSq))
-    const closestX = x1 + t * dx
-    const closestY = y1 + t * dy
-    
-    const distX = Math.abs(closestX - boxCenterX)
-    const distY = Math.abs(closestY - boxCenterY)
-    
-    return distX <= boxHalfW + lineThickness && distY <= boxHalfH + lineThickness
-  }
-  
   // Normalize a vector
   const normalize = (v) => {
     const len = Math.sqrt(v.x * v.x + v.y * v.y)
@@ -543,7 +502,6 @@ const labelPositions = computed(() => {
   // Calculate angle between two vectors (in radians)
   const angleBetween = (v1, v2) => {
     const dot = v1.x * v2.x + v1.y * v2.y
-    // Clamp to avoid floating point errors
     return Math.acos(Math.max(-1, Math.min(1, dot)))
   }
   
@@ -559,18 +517,60 @@ const labelPositions = computed(() => {
     if (angle >= -157.5 && angle < -112.5) return 'top-left'
     if (angle >= -112.5 && angle < -67.5) return 'top'
     if (angle >= -67.5 && angle < -22.5) return 'top-right'
-    return 'top' // fallback
+    return 'top'
   }
   
   // Get perpendicular directions to a line vector
   const getPerpendicularDirections = (lineVec) => {
-    // Rotate 90 degrees: (x, y) -> (-y, x) and (y, -x)
     const perp1 = normalize({ x: -lineVec.y, y: lineVec.x })
     const perp2 = normalize({ x: lineVec.y, y: -lineVec.x })
     return [getDirectionFromVector(perp1), getDirectionFromVector(perp2)]
   }
   
-  // === Step 1: Collect all line segments ===
+  // Calculate distance from point P to line segment AB
+  // Returns { distance, closestPoint }
+  const pointToSegmentDistance = (P, A, B) => {
+    const dx = B.x - A.x
+    const dy = B.y - A.y
+    const segLenSq = dx * dx + dy * dy
+    
+    if (segLenSq === 0) {
+      // Segment is a point
+      const dist = Math.sqrt((P.x - A.x) ** 2 + (P.y - A.y) ** 2)
+      return { distance: dist, closestPoint: A, isOnSegment: true }
+    }
+    
+    // Project P onto line AB, clamped to segment
+    const t = Math.max(0, Math.min(1, ((P.x - A.x) * dx + (P.y - A.y) * dy) / segLenSq))
+    const closestPoint = { x: A.x + t * dx, y: A.y + t * dy }
+    const distance = Math.sqrt((P.x - closestPoint.x) ** 2 + (P.y - closestPoint.y) ** 2)
+    const isOnSegment = t > 0 && t < 1 // true if perpendicular foot is on segment
+    
+    return { distance, closestPoint, isOnSegment }
+  }
+  
+  // Get the direction from point P to point Q
+  const getDirectionFromPoints = (P, Q) => {
+    const v = { x: Q.x - P.x, y: Q.y - P.y }
+    return getDirectionFromVector(normalize(v))
+  }
+  
+  // Get related directions (e.g., 'top' relates to 'top-left' and 'top-right')
+  const getRelatedDirections = (dir) => {
+    const related = {
+      'top': ['top', 'top-left', 'top-right'],
+      'bottom': ['bottom', 'bottom-left', 'bottom-right'],
+      'left': ['left', 'top-left', 'bottom-left'],
+      'right': ['right', 'top-right', 'bottom-right'],
+      'top-left': ['top-left', 'top', 'left'],
+      'top-right': ['top-right', 'top', 'right'],
+      'bottom-left': ['bottom-left', 'bottom', 'left'],
+      'bottom-right': ['bottom-right', 'bottom', 'right']
+    }
+    return related[dir] || [dir]
+  }
+  
+  // === Step 1: Collect all line segments with indices ===
   const allLineSegments = []
   for (let i = 0; i < path.length - 1; i++) {
     const fromCoord = coordinates.value[path[i]]
@@ -578,10 +578,14 @@ const labelPositions = computed(() => {
     if (fromCoord && toCoord) {
       allLineSegments.push({
         x1: fromCoord.x, y1: fromCoord.y,
-        x2: toCoord.x, y2: toCoord.y
+        x2: toCoord.x, y2: toCoord.y,
+        fromIndex: i, toIndex: i + 1
       })
     }
   }
+  
+  // Distance threshold for penalizing nearby segments
+  const DISTANCE_THRESHOLD_PER_CHAR = 25
   
   // === Step 2: Process each station in order ===
   for (let index = 0; index < path.length; index++) {
@@ -613,60 +617,127 @@ const labelPositions = computed(() => {
       'bottom-right': { x: cornerX, y: cornerBottomY, anchor: 'start', name: 'bottom-right' }
     }
     
+    const allDirections = ['top', 'bottom', 'left', 'right', 'top-left', 'top-right', 'bottom-left', 'bottom-right']
+    
+    // Initialize direction penalties
+    const directionPenalty = {}
+    for (const dir of allDirections) {
+      directionPenalty[dir] = 0
+    }
+    
     // Get adjacent station coordinates
     const prevCoord = index > 0 ? coordinates.value[path[index - 1]] : null
     const nextCoord = index < path.length - 1 ? coordinates.value[path[index + 1]] : null
     const prevStation = index > 0 ? path[index - 1] : null
     
-    // Check if a position is blocked by lines or labels
-    const isPositionBlocked = (posName) => {
-      const pos = positions[posName]
-      const labelBox = getLabelBox(coord, pos, pos.anchor, station)
+    // === Penalize directions based on adjacent stations ===
+    // Direct connection to prev station (C)
+    if (prevCoord) {
+      const dirToPrev = getDirectionFromPoints(coord, prevCoord)
+      for (const relDir of getRelatedDirections(dirToPrev)) {
+        directionPenalty[relDir] += 30 // Heavy penalty for direction towards adjacent station
+      }
+    }
+    
+    // Direct connection to next station (E)
+    if (nextCoord) {
+      const dirToNext = getDirectionFromPoints(coord, nextCoord)
+      for (const relDir of getRelatedDirections(dirToNext)) {
+        directionPenalty[relDir] += 30
+      }
+    }
+    
+    // === Traverse backwards to penalize nearby segments (BC, AB, ...) ===
+    // Start from segment ending at prev station (i.e., segment index-2 to index-1)
+    for (let segIdx = index - 2; segIdx >= 0; segIdx--) {
+      const seg = allLineSegments[segIdx]
+      if (!seg) continue
       
-      // Check collision with all line segments
-      for (const seg of allLineSegments) {
-        if (boxIntersectsLine(labelBox, seg.x1, seg.y1, seg.x2, seg.y2, 8)) {
-          return true
+      const A = { x: seg.x1, y: seg.y1 }
+      const B = { x: seg.x2, y: seg.y2 }
+      const { distance, closestPoint } = pointToSegmentDistance(coord, A, B)
+      
+      if (distance < DISTANCE_THRESHOLD_PER_CHAR * station.length) {
+        // Penalize the direction towards the closest point
+        const dirToClosest = getDirectionFromPoints(coord, closestPoint)
+        const penalty = Math.max(0, 25 - distance * 0.4) // Closer = higher penalty
+        for (const relDir of getRelatedDirections(dirToClosest)) {
+          directionPenalty[relDir] += penalty
+        }
+      } else {
+        // Distance exceeds threshold, stop traversal
+        break
+      }
+    }
+    
+    // === Traverse forwards to penalize nearby segments (EF, FG, ...) ===
+    // Start from segment starting at next station (i.e., segment index+1 to index+2)
+    for (let segIdx = index + 1; segIdx < allLineSegments.length; segIdx++) {
+      const seg = allLineSegments[segIdx]
+      if (!seg) continue
+      
+      const A = { x: seg.x1, y: seg.y1 }
+      const B = { x: seg.x2, y: seg.y2 }
+      const { distance, closestPoint } = pointToSegmentDistance(coord, A, B)
+      
+      if (distance < DISTANCE_THRESHOLD_PER_CHAR * station.length) {
+        const dirToClosest = getDirectionFromPoints(coord, closestPoint)
+        const penalty = Math.max(0, 25 - distance * 0.4)
+        for (const relDir of getRelatedDirections(dirToClosest)) {
+          directionPenalty[relDir] += penalty
+        }
+      } else {
+        break
+      }
+    }
+    
+    // === Penalize directions used by previous station's label ===
+    const prevLabelPos = prevStation ? result[prevStation] : null
+    if (prevLabelPos) {
+      const prevDir = prevLabelPos.name
+      // Exact match penalty
+      directionPenalty[prevDir] += 15
+      // Related directions penalty
+      for (const relDir of getRelatedDirections(prevDir)) {
+        if (relDir !== prevDir) {
+          directionPenalty[relDir] += 8
         }
       }
-      
-      // Check collision with already placed labels
+    }
+    
+    // === Check collision with already placed labels ===
+    const labelCollisionPenalty = {}
+    for (const dir of allDirections) {
+      labelCollisionPenalty[dir] = 0
+      const pos = positions[dir]
+      const labelBox = getLabelBox(coord, pos, pos.anchor, station)
       for (const placed of placedLabels) {
         if (boxesOverlap(labelBox, placed.box, 4)) {
-          return true
+          labelCollisionPenalty[dir] += 50 // Heavy penalty for label overlap
         }
       }
-      
-      return false
     }
     
     // === Determine preferred direction based on geometry ===
     let preferredDirections = []
     
     if (prevCoord && nextCoord) {
-      // Middle station: calculate angle W-X-Y
       const toW = normalize({ x: prevCoord.x - coord.x, y: prevCoord.y - coord.y })
       const toY = normalize({ x: nextCoord.x - coord.x, y: nextCoord.y - coord.y })
-      
-      // Angle between vectors (0 to PI)
       const angle = angleBetween(toW, toY)
       const angleDegrees = angle * 180 / Math.PI
       
       if (angleDegrees > 150) {
         // Straight line: prefer perpendicular directions
-        // Line direction is average of toW reversed and toY
         const lineDir = normalize({ x: toY.x - toW.x, y: toY.y - toW.y })
         preferredDirections = getPerpendicularDirections(lineDir)
       } else {
         // Corner: prefer angle bisector's reverse direction
-        // Angle bisector direction: sum of normalized vectors to W and Y
         const bisector = normalize({ x: toW.x + toY.x, y: toW.y + toY.y })
-        // Reverse of bisector points outward from the corner
         const outward = { x: -bisector.x, y: -bisector.y }
         const preferredDir = getDirectionFromVector(outward)
         preferredDirections = [preferredDir]
         
-        // Also add adjacent directions as alternatives
         const adjacentDirs = {
           'top': ['top-left', 'top-right'],
           'bottom': ['bottom-left', 'bottom-right'],
@@ -680,77 +751,36 @@ const labelPositions = computed(() => {
         preferredDirections = preferredDirections.concat(adjacentDirs[preferredDir] || [])
       }
     } else if (prevCoord) {
-      // End station (only has prev): prefer direction away from prev
-      const toPrev = { x: prevCoord.x - coord.x, y: prevCoord.y - coord.y }
-      const awayDir = normalize({ x: -toPrev.x, y: -toPrev.y })
-      preferredDirections = getPerpendicularDirections(normalize(toPrev))
-      // Also add the "away" direction
-      preferredDirections.unshift(getDirectionFromVector(awayDir))
+      const toPrev = normalize({ x: prevCoord.x - coord.x, y: prevCoord.y - coord.y })
+      preferredDirections = getPerpendicularDirections(toPrev)
+      const awayDir = getDirectionFromVector({ x: -toPrev.x, y: -toPrev.y })
+      preferredDirections.unshift(awayDir)
     } else if (nextCoord) {
-      // Start station (only has next): prefer direction away from next
-      const toNext = { x: nextCoord.x - coord.x, y: nextCoord.y - coord.y }
-      const awayDir = normalize({ x: -toNext.x, y: -toNext.y })
-      preferredDirections = getPerpendicularDirections(normalize(toNext))
-      preferredDirections.unshift(getDirectionFromVector(awayDir))
+      const toNext = normalize({ x: nextCoord.x - coord.x, y: nextCoord.y - coord.y })
+      preferredDirections = getPerpendicularDirections(toNext)
+      const awayDir = getDirectionFromVector({ x: -toNext.x, y: -toNext.y })
+      preferredDirections.unshift(awayDir)
     } else {
-      // Isolated station: default to top
       preferredDirections = ['top', 'bottom', 'left', 'right']
     }
     
-    // === Apply avoidance rule for previous label ===
-    // If previous station's label is in a certain direction, avoid that direction
-    const prevLabelPos = prevStation ? result[prevStation] : null
-    const oppositeDirection = {
-      'top': 'bottom',
-      'bottom': 'top',
-      'left': 'right',
-      'right': 'left',
-      'top-left': 'bottom-right',
-      'top-right': 'bottom-left',
-      'bottom-left': 'top-right',
-      'bottom-right': 'top-left'
-    }
-    
     // === Score and select best position ===
-    const allDirections = ['top', 'bottom', 'left', 'right', 'top-left', 'top-right', 'bottom-left', 'bottom-right']
     let bestPos = positions['top']
     let bestScore = -Infinity
     
     for (const dirName of allDirections) {
       let score = 0
       
-      // Heavy penalty for blocked positions
-      if (isPositionBlocked(dirName)) {
-        score -= 100
-      }
+      // Apply segment proximity penalty
+      score -= directionPenalty[dirName]
       
-      // Bonus for preferred directions (higher priority for earlier in list)
+      // Apply label collision penalty
+      score -= labelCollisionPenalty[dirName]
+      
+      // Bonus for preferred directions
       const preferredIndex = preferredDirections.indexOf(dirName)
       if (preferredIndex !== -1) {
-        score += 20 - preferredIndex * 3 // First preferred gets +20, second +17, etc.
-      }
-      
-      // Avoid same direction as previous label
-      // Match both exact and related directions (e.g., if prev is 'top', avoid 'top', 'top-left', 'top-right')
-      if (prevLabelPos) {
-        const prevDir = prevLabelPos.name
-        // Exact match penalty
-        if (dirName === prevDir) {
-          score -= 10
-        }
-        // Related direction penalty (shares 'top', 'bottom', 'left', or 'right')
-        const prevParts = prevDir.split('-')
-        const currParts = dirName.split('-')
-        for (const part of prevParts) {
-          if (currParts.includes(part) || dirName === part) {
-            score -= 5
-            break
-          }
-        }
-        // Bonus for opposite direction
-        if (dirName === oppositeDirection[prevDir]) {
-          score += 8
-        }
+        score += 20 - preferredIndex * 3
       }
       
       // Slight preference for cardinal directions over corners
