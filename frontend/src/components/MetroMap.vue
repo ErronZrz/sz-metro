@@ -664,9 +664,6 @@ const labelPositions = computed(() => {
         for (const relDir of getRelatedDirections(dirToClosest)) {
           directionPenalty[relDir] += penalty
         }
-      } else {
-        // Distance exceeds threshold, stop traversal
-        break
       }
     }
     
@@ -686,8 +683,6 @@ const labelPositions = computed(() => {
         for (const relDir of getRelatedDirections(dirToClosest)) {
           directionPenalty[relDir] += penalty
         }
-      } else {
-        break
       }
     }
     
@@ -724,32 +719,22 @@ const labelPositions = computed(() => {
     if (prevCoord && nextCoord) {
       const toW = normalize({ x: prevCoord.x - coord.x, y: prevCoord.y - coord.y })
       const toY = normalize({ x: nextCoord.x - coord.x, y: nextCoord.y - coord.y })
-      const angle = angleBetween(toW, toY)
-      const angleDegrees = angle * 180 / Math.PI
-      
-      if (angleDegrees > 150) {
-        // Straight line: prefer perpendicular directions
-        const lineDir = normalize({ x: toY.x - toW.x, y: toY.y - toW.y })
-        preferredDirections = getPerpendicularDirections(lineDir)
-      } else {
-        // Corner: prefer angle bisector's reverse direction
-        const bisector = normalize({ x: toW.x + toY.x, y: toW.y + toY.y })
-        const outward = { x: -bisector.x, y: -bisector.y }
-        const preferredDir = getDirectionFromVector(outward)
-        preferredDirections = [preferredDir]
-        
-        const adjacentDirs = {
-          'top': ['top-left', 'top-right'],
-          'bottom': ['bottom-left', 'bottom-right'],
-          'left': ['top-left', 'bottom-left'],
-          'right': ['top-right', 'bottom-right'],
-          'top-left': ['top', 'left'],
-          'top-right': ['top', 'right'],
-          'bottom-left': ['bottom', 'left'],
-          'bottom-right': ['bottom', 'right']
-        }
-        preferredDirections = preferredDirections.concat(adjacentDirs[preferredDir] || [])
+      // Corner: prefer angle bisector's reverse direction
+      const bisector = normalize({ x: toW.x + toY.x, y: toW.y + toY.y })
+      const outward = { x: -bisector.x, y: -bisector.y }
+      const preferredDir = getDirectionFromVector(outward)
+      preferredDirections = [preferredDir]
+      const adjacentDirs = {
+        'top': ['top-left', 'top-right'],
+        'bottom': ['bottom-left', 'bottom-right'],
+        'left': ['top-left', 'bottom-left'],
+        'right': ['top-right', 'bottom-right'],
+        'top-left': ['top', 'left'],
+        'top-right': ['top', 'right'],
+        'bottom-left': ['bottom', 'left'],
+        'bottom-right': ['bottom', 'right']
       }
+      preferredDirections = preferredDirections.concat(adjacentDirs[preferredDir] || [])
     } else if (prevCoord) {
       const toPrev = normalize({ x: prevCoord.x - coord.x, y: prevCoord.y - coord.y })
       preferredDirections = getPerpendicularDirections(toPrev)
