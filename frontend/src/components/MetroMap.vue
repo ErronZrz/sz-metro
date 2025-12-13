@@ -660,7 +660,7 @@ const labelPositions = computed(() => {
       if (distance < DISTANCE_THRESHOLD_PER_CHAR * station.length) {
         // Penalize the direction towards the closest point
         const dirToClosest = getDirectionFromPoints(coord, closestPoint)
-        const penalty = Math.max(0, 25 - distance * 0.4) // Closer = higher penalty
+        const penalty = 800 / (distance + 20) // Closer = higher penalty
         for (const relDir of getRelatedDirections(dirToClosest)) {
           directionPenalty[relDir] += penalty
         }
@@ -679,7 +679,7 @@ const labelPositions = computed(() => {
       
       if (distance < DISTANCE_THRESHOLD_PER_CHAR * station.length) {
         const dirToClosest = getDirectionFromPoints(coord, closestPoint)
-        const penalty = Math.max(0, 25 - distance * 0.4)
+        const penalty = 800 / (distance + 20)
         for (const relDir of getRelatedDirections(dirToClosest)) {
           directionPenalty[relDir] += penalty
         }
