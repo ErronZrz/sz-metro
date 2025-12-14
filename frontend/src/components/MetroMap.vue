@@ -228,7 +228,7 @@
         <span>终点</span>
       </div>
       <div v-if="mode === 'answer'" class="flex items-center gap-1">
-        <span class="w-3 h-3 rounded-full bg-blue-500"></span>
+        <span class="w-3 h-3 rounded-full border-2 border-gray-400 bg-white"></span>
         <span>途经站点</span>
       </div>
     </div>
@@ -344,15 +344,58 @@ const pathSegments = computed(() => {
     // Try to find the line color for this segment
     let color = '#3B82F6' // Default blue
     
-    // Check which line connects these two stations
+    // Find all lines that connect these two stations
+    const candidateLines = []
     for (const [lineName, lineData] of Object.entries(linesData.value)) {
       const stations = lineData.stations || []
       const fromIdx = stations.indexOf(from)
       const toIdx = stations.indexOf(to)
       if (fromIdx !== -1 && toIdx !== -1 && Math.abs(fromIdx - toIdx) === 1) {
-        color = lineData.color || color
-        break
+        candidateLines.push({ lineName, lineData, stations, fromIdx, toIdx })
       }
+    }
+    
+    if (candidateLines.length === 1) {
+      // Only one line connects these stations, use it
+      color = candidateLines[0].lineData.color || color
+    } else if (candidateLines.length > 1) {
+      // Multiple lines connect these stations (transfer stations)
+      // Use context from adjacent stations to determine the correct line
+      
+      // Check the previous station (if exists) to see which line we came from
+      const prevStation = i > 0 ? path[i - 1] : null
+      // Check the next station (if exists) to see which line we're going to
+      const nextStation = i < path.length - 2 ? path[i + 2] : null
+      
+      let bestLine = candidateLines[0]
+      
+      for (const candidate of candidateLines) {
+        const { stations } = candidate
+        
+        // If the previous station is also on this line, this is likely the correct line
+        if (prevStation && stations.includes(prevStation)) {
+          const prevIdx = stations.indexOf(prevStation)
+          const fromIdx = stations.indexOf(from)
+          // Check if prevStation is adjacent to from on this line
+          if (Math.abs(prevIdx - fromIdx) === 1) {
+            bestLine = candidate
+            break
+          }
+        }
+        
+        // If the next station is also on this line, this is likely the correct line
+        if (nextStation && stations.includes(nextStation)) {
+          const toIdx = stations.indexOf(to)
+          const nextIdx = stations.indexOf(nextStation)
+          // Check if nextStation is adjacent to 'to' on this line
+          if (Math.abs(toIdx - nextIdx) === 1) {
+            bestLine = candidate
+            break
+          }
+        }
+      }
+      
+      color = bestLine.lineData.color || color
     }
     
     segments.push({ from, to, color })
@@ -455,7 +498,7 @@ const labelPositions = computed(() => {
   const path = pathStations.value
   
   // === 调试：指定要调试的站点名称 ===
-  const DEBUG_STATION = '无'
+  const DEBUG_STATION = '新塘围'
   
   // === 配置：所有评分参数 ===
   const CONFIG = {
@@ -496,8 +539,8 @@ const labelPositions = computed(() => {
     SEGMENT_INTERSECTION_PENALTY_MIN: 120,  // 线段相交的最小惩罚
     SEGMENT_INTERSECTION_PENALTY_MAX: 320,  // 线段相交的最大惩罚
     SEGMENT_INTERSECTION_LENGTH_THRESHOLD: 14, // 触发惩罚的最小重叠长度（像素）
-    PREV_LABEL_SAME_DIR_PENALTY_MAIN: 20,   // 与前站标签同方向的惩罚（上/下）
-    PREV_LABEL_SAME_DIR_PENALTY_DIAGONAL: 10, // 与前站标签同方向的惩罚（对角）
+    PREV_LABEL_SAME_DIR_PENALTY_MAIN: 10,   // 与前站标签同方向的惩罚（上/下）
+    PREV_LABEL_SAME_DIR_PENALTY_DIAGONAL: 5, // 与前站标签同方向的惩罚（对角）
     LABEL_COLLISION_BASE_PENALTY: 400,      // 标签碰撞的基础惩罚
     LABEL_COLLISION_MIN_RATIO: 0.1,         // 标签碰撞最小惩罚比例
     LABEL_COLLISION_MIN_OVERLAP_LENGTH: 5,  // 任意维度重叠小于此值不认为碰撞（像素）
@@ -505,6 +548,7 @@ const labelPositions = computed(() => {
     // 奖励值
     PREFERRED_DIRECTION_BASE_BONUS: 40,     // 优选方向的基础奖励
     CARDINAL_DIRECTION_BONUS: 2,            // 主方向（上/下/左/右）的奖励
+    AWAY_FROM_NEXT_BONUS: [5, 2],           // 远离下一站奖励
   }
   
   // === 工具函数 ===
@@ -791,6 +835,39 @@ const labelPositions = computed(() => {
         }
       }
       
+      // === 计算远离下一站奖励 ===
+      // 计算每个方向的标签中心点到下一站的距离，距离越远奖励越高
+      const awayFromNextBonus = {}
+      for (const dir of allDirections) {
+        awayFromNextBonus[dir] = 0
+      }
+      
+      if (nextCoord) {
+        // 计算每个方向标签中心点到下一站的距离
+        const dirDistances = []
+        for (const dir of allDirections) {
+          const pos = positions[dir]
+          const labelBox = getLabelBox(coord, pos, pos.anchor, station)
+          // 标签几何中心点
+          const labelCenterX = (labelBox.left + labelBox.right) / 2
+          const labelCenterY = (labelBox.top + labelBox.bottom) / 2
+          // 到下一站的距离（勾股定理）
+          const dx = labelCenterX - nextCoord.x
+          const dy = labelCenterY - nextCoord.y
+          const distance = Math.sqrt(dx * dx + dy * dy)
+          dirDistances.push({ dir, distance })
+        }
+        
+        // 按距离降序排序（距离最远的排在前面）
+        dirDistances.sort((a, b) => b.distance - a.distance)
+        
+        // 给前5名分配奖励
+        const bonusValues = CONFIG.AWAY_FROM_NEXT_BONUS
+        for (let rank = 0; rank < Math.min(bonusValues.length, dirDistances.length); rank++) {
+          awayFromNextBonus[dirDistances[rank].dir] = bonusValues[rank]
+        }
+      }
+      
       // === 根据几何形状确定优选方向 ===
       // 存储实际的理想外向向量，用于基于角度的奖励计算
       let idealOutwardVec = null
@@ -924,6 +1001,12 @@ const labelPositions = computed(() => {
           scoreDetails.cardinalBonus = CONFIG.CARDINAL_DIRECTION_BONUS
         }
         
+        // 应用远离下一站奖励
+        if (awayFromNextBonus[dirName] > 0) {
+          score += awayFromNextBonus[dirName]
+          scoreDetails.awayFromNextBonus = awayFromNextBonus[dirName]
+        }
+        
         // 收集调试信息
         if (!debugStationInPath || isDebugStation) {
           const prevLabelPenalty = (prevLabelPos && prevLabelPos.name === dirName) ? 
@@ -935,6 +1018,7 @@ const labelPositions = computed(() => {
             `${scoreDetails.labelCollision.toFixed(0)}(标签碰撞) ` +
             `+${scoreDetails.preferredBonus.toFixed(0)}(优选方向) ` +
             `${(-prevLabelPenalty).toFixed(0)}(前站标签) ` +
+            `+${scoreDetails.awayFromNextBonus || 0}(远离下站) ` +
             `+${scoreDetails.cardinalBonus}(主方向)`
           
           if (isDebugStation) {
@@ -1218,7 +1302,11 @@ onMounted(async () => {
 .map-wrapper {
   width: 100%;
   height: 300px;
+  min-height: 150px;
+  max-height: 750px;
   touch-action: none;
+  resize: vertical;
+  overflow: auto;
 }
 
 .metro-map {

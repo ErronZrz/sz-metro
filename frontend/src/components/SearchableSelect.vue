@@ -2,7 +2,24 @@
   <div class="relative" ref="containerRef">
     <!-- Input Field -->
     <div class="relative">
+      <div v-if="value && !isOpen" class="w-full border rounded-lg flex items-center" :class="[
+        size === 'small' ? 'px-2 py-1 pr-6 text-sm' : 'px-4 py-2 pr-8',
+        disabled
+          ? 'border-gray-200 bg-gray-100 text-gray-500 cursor-not-allowed'
+          : 'border-gray-300 bg-white cursor-pointer'
+      ]" @click="handleInputClick">
+        <span class="truncate">{{ value }}</span>
+        <span v-if="stationLines && stationLines[value]" class="ml-2 flex gap-1 flex-shrink-0">
+          <span
+            v-for="line in stationLines[value]"
+            :key="line.name"
+            class="px-1.5 py-0.5 text-xs rounded text-white whitespace-nowrap"
+            :style="{ backgroundColor: line.color }"
+          >{{ line.name }}</span>
+        </span>
+      </div>
       <input
+        v-show="!value || isOpen"
         ref="inputRef"
         type="text"
         :value="displayValue"
@@ -19,8 +36,9 @@
             : 'border-gray-300 focus:ring-2 focus:ring-metro-primary focus:border-transparent bg-white'
         ]"
       />
-      <!-- Dropdown Arrow -->
+      <!-- Dropdown Arrow (when no value selected) -->
       <div
+        v-if="!value"
         class="absolute inset-y-0 right-0 flex items-center pointer-events-none"
         :class="[disabled ? 'text-gray-400' : 'text-gray-600', size === 'small' ? 'pr-1' : 'pr-3']"
       >
@@ -28,11 +46,12 @@
           <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
         </svg>
       </div>
-      <!-- Clear Button -->
+      <!-- Clear Button (when value is selected) -->
       <button
         v-if="value && !disabled"
         @click.stop="clearSelection"
-        :class="['absolute inset-y-0 flex items-center text-gray-400 hover:text-gray-600', size === 'small' ? 'right-4 pr-1' : 'right-8 pr-2']"
+        class="absolute inset-y-0 right-0 flex items-center text-gray-400 hover:text-gray-600"
+        :class="[size === 'small' ? 'pr-1' : 'pr-3']"
       >
         <svg :class="size === 'small' ? 'w-3 h-3' : 'w-4 h-4'" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
@@ -57,20 +76,28 @@
         @click="selectOption(option)"
         @mouseenter="highlightedIndex = index"
         :class="[
-          'cursor-pointer transition-colors',
+          'cursor-pointer transition-colors flex items-center justify-between',
           size === 'small' ? 'px-2 py-1 text-sm' : 'px-4 py-2',
           index === highlightedIndex ? 'bg-blue-100 text-blue-800' : 'hover:bg-gray-100',
           option === value ? 'font-medium text-metro-primary' : ''
         ]"
       >
         <span v-html="highlightMatch(option)"></span>
+        <span v-if="stationLines && stationLines[option]" class="ml-2 flex gap-1 flex-shrink-0">
+          <span
+            v-for="line in stationLines[option]"
+            :key="line.name"
+            class="px-1.5 py-0.5 text-xs rounded text-white whitespace-nowrap"
+            :style="{ backgroundColor: line.color }"
+          >{{ line.name }}</span>
+        </span>
       </div>
     </div>
   </div>
 </template>
 
 <script setup>
-import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
+import { ref, computed, watch, onMounted, onUnmounted, nextTick } from 'vue'
 
 const props = defineProps({
   value: {
@@ -93,10 +120,14 @@ const props = defineProps({
     type: String,
     default: 'normal',  // 'normal' or 'small'
     validator: (value) => ['normal', 'small'].includes(value)
+  },
+  stationLines: {
+    type: Object,
+    default: null  // Map of station name to array of { name, color }
   }
 })
 
-const emit = defineEmits(['update:value', 'confirm', 'cancel'])
+const emit = defineEmits(['update:value', 'confirm', 'cancel', 'maxTagCountChange'])
 
 const containerRef = ref(null)
 const inputRef = ref(null)
@@ -144,6 +175,26 @@ const filteredOptions = computed(() => {
   })
 })
 
+// Calculate max tag count among filtered options
+const maxTagCount = computed(() => {
+  if (!props.stationLines || !searchQuery.value) {
+    return 0
+  }
+  let max = 0
+  for (const option of filteredOptions.value) {
+    const lines = props.stationLines[option]
+    if (lines && lines.length > max) {
+      max = lines.length
+    }
+  }
+  return max
+})
+
+// Watch maxTagCount and emit changes
+watch(maxTagCount, (newVal) => {
+  emit('maxTagCountChange', newVal)
+}, { immediate: true })
+
 // Highlight matching text
 const highlightMatch = (text) => {
   if (!searchQuery.value) return text
@@ -167,6 +218,16 @@ const handleInput = (event) => {
 const handleFocus = () => {
   isOpen.value = true
   searchQuery.value = ''
+}
+
+const handleInputClick = () => {
+  if (!props.disabled) {
+    isOpen.value = true
+    searchQuery.value = ''
+    nextTick(() => {
+      inputRef.value?.focus()
+    })
+  }
 }
 
 const handleKeydown = (event) => {
@@ -241,7 +302,7 @@ const focus = () => {
   }
 }
 
-defineExpose({ focus })
+defineExpose({ focus, maxTagCount })
 
 // Reset highlighted index when filtered options change
 watch(filteredOptions, () => {

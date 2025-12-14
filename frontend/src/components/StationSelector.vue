@@ -9,6 +9,7 @@
           :options="gameStore.availableStations"
           :disabled="isLocked || !gameStore.hasSelectedLines"
           :placeholder="startPlaceholder"
+          :stationLines="gameStore.stationLinesMap"
           @update:value="handleStartChange"
         />
       </div>
@@ -21,6 +22,7 @@
           :options="gameStore.reachableStations"
           :disabled="isLocked || !gameStore.startStation"
           :placeholder="endPlaceholder"
+          :stationLines="gameStore.stationLinesMap"
           @update:value="handleEndChange"
         />
       </div>
@@ -40,6 +42,13 @@
         class="flex-1 px-6 py-3 bg-metro-primary text-white rounded-lg hover:bg-blue-700 transition font-medium"
       >
         ▶️ 开始游戏
+      </button>
+      <button
+        v-if="gameStore.startStation && gameStore.endStation"
+        @click="handleQueryRoute"
+        class="flex-1 px-6 py-3 bg-amber-500 text-white rounded-lg hover:bg-amber-600 transition font-medium"
+      >
+        🔍 查询路线
       </button>
     </div>
 
@@ -62,8 +71,8 @@ import SearchableSelect from './SearchableSelect.vue'
 
 const gameStore = useGameStore()
 
-// Game in progress or result page locks station selection
-const isLocked = computed(() => gameStore.gameStatus === 'playing' || gameStore.gameStatus === 'result')
+// Game in progress, result page, or query mode locks station selection
+const isLocked = computed(() => gameStore.gameStatus === 'playing' || gameStore.gameStatus === 'result' || gameStore.gameStatus === 'query')
 
 // Placeholder texts
 const startPlaceholder = computed(() => {
@@ -104,6 +113,12 @@ const handleRandomStations = async () => {
 const handleStartGame = () => {
   if (gameStore.startStation && gameStore.endStation) {
     gameStore.setStations(gameStore.startStation, gameStore.endStation)
+  }
+}
+
+const handleQueryRoute = async () => {
+  if (gameStore.startStation && gameStore.endStation) {
+    await gameStore.queryRoute()
   }
 }
 </script>

@@ -45,12 +45,18 @@
             <h2 class="text-2xl font-bold text-gray-800 mb-4">🎉 恭喜答对！</h2>
             <GameResult />
           </section>
+
+          <!-- Query Mode: 只展示路线查询结果 -->
+          <section v-if="gameStore.gameStatus === 'query'">
+            <h2 class="text-2xl font-bold text-gray-800 mb-4">🔍 路线查询结果</h2>
+            <QueryResult />
+          </section>
         </div>
       </div>
 
       <!-- Footer -->
       <footer class="text-center mt-8 text-white/60">
-        <p>深圳地铁寻路游戏 v1.0 | 使用 Vue 3 + FastAPI 构建</p>
+        <p>深圳地铁寻路挑战 v1.2 | 使用 Vue 3 + FastAPI 构建</p>
       </footer>
     </div>
   </div>
@@ -63,6 +69,7 @@ import LineSelector from '@/components/LineSelector.vue'
 import StationSelector from '@/components/StationSelector.vue'
 import PathInput from '@/components/PathInput.vue'
 import GameResult from '@/components/GameResult.vue'
+import QueryResult from '@/components/QueryResult.vue'
 
 const gameStore = useGameStore()
 

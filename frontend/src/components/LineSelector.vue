@@ -17,27 +17,21 @@
       </button>
     </div>
 
-    <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
-      <label
+    <div class="flex flex-wrap gap-4">
+      <span
         v-for="line in gameStore.allLines"
         :key="line"
-        class="flex items-center space-x-2 p-3 border-2 rounded-lg transition"
+        @click="!gameStore.isPlaying && gameStore.toggleLine(line)"
+        class="inline-flex items-center px-3 py-1.5 rounded-full text-sm font-medium transition-all"
         :class="{
-          'border-metro-primary bg-blue-50': gameStore.selectedLines.includes(line),
-          'border-gray-200': !gameStore.selectedLines.includes(line),
-          'cursor-pointer hover:bg-gray-50': !gameStore.isPlaying,
-          'cursor-not-allowed opacity-60': gameStore.isPlaying
+          'cursor-pointer hover:opacity-80': !gameStore.isPlaying,
+          'cursor-not-allowed': gameStore.isPlaying,
+          'ring-2 ring-offset-2 ring-gray-400': gameStore.selectedLines.includes(line)
         }"
+        :style="getLineStyle(line)"
       >
-        <input
-          type="checkbox"
-          :checked="gameStore.selectedLines.includes(line)"
-          @change="gameStore.toggleLine(line)"
-          :disabled="gameStore.isPlaying"
-          class="w-4 h-4 text-metro-primary rounded focus:ring-metro-primary disabled:cursor-not-allowed"
-        />
-        <span class="font-medium text-gray-700">{{ line }}</span>
-      </label>
+        {{ line }}
+      </span>
     </div>
 
     <div v-if="gameStore.hasSelectedLines" class="mt-4 p-4 bg-green-50 border border-green-200 rounded-lg">
@@ -46,11 +40,30 @@
         <span class="font-semibold">{{ gameStore.sortedSelectedLines.join(', ') }}</span>
       </p>
     </div>
+
+    <!-- Selected Lines Map Preview -->
+    <div v-if="gameStore.hasSelectedLines" class="mt-4">
+      <SelectedLinesMap :selectedLines="gameStore.sortedSelectedLines" />
+    </div>
   </div>
 </template>
 
 <script setup>
 import { useGameStore } from '@/stores/game'
+import SelectedLinesMap from './SelectedLinesMap.vue'
 
 const gameStore = useGameStore()
+
+// Get line style with background color
+const getLineStyle = (lineName) => {
+  const lineData = gameStore.linesData[lineName]
+  const color = lineData?.color || '#6B7280'
+  const isSelected = gameStore.selectedLines.includes(lineName)
+  
+  return {
+    backgroundColor: isSelected ? color : `${color}40`,
+    color: isSelected ? '#FFFFFF' : color,
+    opacity: gameStore.isPlaying ? 0.6 : 1
+  }
+}
 </script>

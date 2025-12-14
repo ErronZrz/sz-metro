@@ -6,6 +6,7 @@ export const useGameStore = defineStore('game', {
     // Available lines
     allLines: [],
     selectedLines: [],
+    linesData: {},  // Line details with color and stations
     
     // Station selection
     availableStations: [],  // All stations in selected lines
@@ -23,7 +24,7 @@ export const useGameStore = defineStore('game', {
     showAnswer: false, // 是否显示答案
     
     // UI state
-    gameStatus: 'setup', // setup, playing, result
+    gameStatus: 'setup', // setup, playing, result, query
     loading: false,
     error: null,
   }),
@@ -32,7 +33,7 @@ export const useGameStore = defineStore('game', {
     hasSelectedLines: (state) => state.selectedLines.length > 0,
     hasStations: (state) => state.startStation && state.endStation,
     canSubmit: (state) => state.userPath.length >= 2,
-    isPlaying: (state) => state.gameStatus === 'playing' || state.gameStatus === 'result',
+isPlaying: (state) => state.gameStatus === 'playing' || state.gameStatus === 'result' || state.gameStatus === 'query',
     // Selected lines sorted by the order in allLines (JSON order)
     sortedSelectedLines: (state) => {
       return state.allLines.filter(line => state.selectedLines.includes(line))
@@ -41,6 +42,25 @@ export const useGameStore = defineStore('game', {
       if (!state.shortestCost) return 0
       // 精确到整数，.5 则进 1
       return Math.ceil(state.shortestCost)
+    },
+    // Get station to lines mapping (only for selected lines)
+    stationLinesMap: (state) => {
+      const map = {}
+      for (const lineName of state.selectedLines) {
+        const lineData = state.linesData[lineName]
+        if (lineData && lineData.stations) {
+          for (const station of lineData.stations) {
+            if (!map[station]) {
+              map[station] = []
+            }
+            map[station].push({
+              name: lineName,
+              color: lineData.color || '#3B82F6'
+            })
+          }
+        }
+      }
+      return map
     },
   },
 
@@ -51,11 +71,22 @@ export const useGameStore = defineStore('game', {
         this.error = null
         const response = await api.getLines()
         this.allLines = response.data
+        // Also load lines data for colors and stations
+        await this.loadLinesData()
       } catch (error) {
         this.error = 'Failed to load metro lines'
         console.error(error)
       } finally {
         this.loading = false
+      }
+    },
+
+    async loadLinesData() {
+      try {
+        const response = await api.getMapCoordinates()
+        this.linesData = response.data.lines || {}
+      } catch (error) {
+        console.error('Failed to load lines data:', error)
       }
     },
 
@@ -359,6 +390,34 @@ export const useGameStore = defineStore('game', {
       // Reload available stations to ensure search works properly
       if (this.hasSelectedLines) {
         await this.loadAvailableStations()
+      }
+    },
+
+    async queryRoute() {
+      if (!this.startStation || !this.endStation) {
+        this.error = 'Please select start and end stations'
+        return
+      }
+
+      try {
+        this.loading = true
+        this.error = null
+        
+        // Get shortest path
+        const pathResponse = await api.calculatePath(
+          this.selectedLines,
+          this.startStation,
+          this.endStation
+        )
+        this.shortestCost = pathResponse.data.shortest_cost
+        this.systemPaths = pathResponse.data.paths
+        this.showAnswer = true
+        this.gameStatus = 'query'  // New status for query mode
+      } catch (error) {
+        this.error = 'Failed to query route'
+        console.error(error)
+      } finally {
+        this.loading = false
       }
     }
   }

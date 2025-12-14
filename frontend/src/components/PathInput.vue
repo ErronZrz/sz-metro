@@ -84,6 +84,7 @@
           :options="gameStore.availableStations"
           :disabled="gameStore.availableStations.length === 0"
           placeholder="搜索并选择站点"
+          :stationLines="gameStore.stationLinesMap"
           @update:value="handleStationSelect"
           @confirm="handleStationConfirm"
         />
@@ -144,16 +145,18 @@
             </button>
             <!-- 插入下拉选择框 -->
             <div v-if="insertIndex === index + 1" class="flex items-center gap-1">
-              <div class="w-36">
+              <div :style="insertBoxWidthStyle">
                 <SearchableSelect
                   :ref="el => setInsertSelectRef(el, index + 1)"
                   :value="insertStation"
                   :options="insertAvailableStations"
                   placeholder="搜索站点"
                   size="small"
+                  :stationLines="gameStore.stationLinesMap"
                   @update:value="handleInsertSelect"
                   @confirm="handleInsertConfirm"
                   @cancel="cancelInsert"
+                  @maxTagCountChange="handleMaxTagCountChange"
                 />
               </div>
             </div>
@@ -169,32 +172,49 @@
       </div>
     </div>
 
-    <!-- Submit Button -->
-    <button
-      @click="handleSubmit"
-      :disabled="!gameStore.canSubmit"
-      class="w-full px-6 py-3 bg-metro-accent text-white rounded-lg hover:bg-orange-600 transition font-medium disabled:bg-gray-300 disabled:cursor-not-allowed"
-    >
-      🚀 {{ gameStore.validationResult && !gameStore.validationResult.is_shortest ? '重新提交' : '提交答案' }}
-    </button>
-
-    <!-- Show Answer Button (出题后就显示，答对后隐藏) -->
-    <div v-if="!gameStore.showAnswer" class="text-center">
-      <button
-        @click="handleShowAnswer"
-        class="px-6 py-3 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition font-medium"
-      >
-        🔎 查看正确答案
-      </button>
+    <!-- Submit Button & Action Buttons -->
+    <div v-if="!gameStore.showAnswer" class="space-y-4">
+      <!-- 提交按钮 -->
+      <div class="text-center">
+        <button
+          @click="handleSubmit"
+          :disabled="!gameStore.canSubmit"
+          class="px-8 py-3 bg-metro-secondary text-white rounded-lg hover:bg-green-700 transition font-medium disabled:bg-gray-300 disabled:cursor-not-allowed"
+        >
+          🚀 {{ gameStore.validationResult && !gameStore.validationResult.is_shortest ? '重新提交' : '提交答案' }}
+        </button>
+      </div>
+      <!-- 重新选站 & 查看正确答案 -->
+      <div class="flex justify-center gap-4">
+        <button
+          @click="gameStore.resetGame()"
+          class="px-8 py-3 bg-gray-400 text-white rounded-lg hover:bg-gray-500 transition font-medium"
+        >
+          🎮 重新选站
+        </button>
+        <button
+          @click="handleShowAnswer"
+          class="px-6 py-3 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition font-medium"
+        >
+          🔎 查看正确答案
+        </button>
+      </div>
     </div>
 
-    <!-- 再来一局按钮（查看答案后显示，放在框外） -->
-    <div v-if="gameStore.showAnswer" class="text-center">
+    <!-- 查看答案后：提交按钮 & 重新选站 放在同一行 -->
+    <div v-if="gameStore.showAnswer" class="flex justify-center gap-4">
+      <button
+        @click="handleSubmit"
+        :disabled="!gameStore.canSubmit"
+        class="px-8 py-3 bg-metro-secondary text-white rounded-lg hover:bg-green-700 transition font-medium disabled:bg-gray-300 disabled:cursor-not-allowed"
+      >
+        🚀 {{ gameStore.validationResult && !gameStore.validationResult.is_shortest ? '重新提交' : '提交答案' }}
+      </button>
       <button
         @click="gameStore.resetGame()"
-        class="px-8 py-3 bg-metro-primary text-white rounded-lg hover:bg-blue-700 transition font-medium"
+        class="px-8 py-3 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition font-medium"
       >
-        🎮 再来一局
+        🎮 重新选站
       </button>
     </div>
 
@@ -238,6 +258,20 @@ const insertIndex = ref(null)  // 当前插入位置，null 表示没有在插�
 const insertStation = ref('')  // 要插入的站名
 const insertSelectRefs = ref({})  // 存储各个插入位置的 SearchableSelect 引用
 const insertJustStarted = ref(false)  // 防止刚开始插入就被取消
+const insertMaxTagCount = ref(0)  // 插入框匹配站点的最大标签数量
+
+// 计算插入框的宽度样式
+const insertBoxWidthStyle = computed(() => {
+  const N = insertMaxTagCount.value
+  // 未输入或 N <= 1 时，w = 36 (9rem)；N > 1 时，w = 24 + 12N
+  const widthRem = N <= 1 ? 10 : (7 + 3 * N)
+  return { width: `${widthRem}rem` }
+})
+
+// 处理 maxTagCount 变化
+const handleMaxTagCountChange = (count) => {
+  insertMaxTagCount.value = count
+}
 
 // 插入时可用的站点（排除已在路径中的站点）
 const insertAvailableStations = computed(() => {
@@ -345,9 +379,7 @@ const handleSubmit = async () => {
 }
 
 const handleShowAnswer = async () => {
-  if (confirm('确定要查看正确答案吗？')) {
-    await gameStore.fetchAndRevealAnswer()
-  }
+  await gameStore.fetchAndRevealAnswer()
 }
 
 // 格式化路径，标注换乘站
