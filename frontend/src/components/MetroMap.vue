@@ -450,10 +450,9 @@ const getDashedLineEndpoint = (startSt, endSt) => {
 //    - 当线段距离 D 足够远时停止遍历
 // 3. 惩罚前一个站点标签使用的方向以避免重叠
 // 4. 优先选择角平分线的反方向
+// 5. 两趟择优：正向和反向各计算一次，选择最低分更高的结果
 const labelPositions = computed(() => {
   const path = pathStations.value
-  const result = {}
-  const placedLabels = [] // 记录已放置的标签边界框
   
   // === 调试：指定要调试的站点名称 ===
   const DEBUG_STATION = '无'
@@ -461,7 +460,7 @@ const labelPositions = computed(() => {
   // === 配置：所有评分参数 ===
   const CONFIG = {
     // 文本渲染
-    TEXT_CHAR_WIDTH: 14,              // 每个字符的估计宽度
+    TEXT_CHAR_WIDTH: 15,              // 每个字符的估计宽度
     TEXT_HEIGHT: 16,                  // 文本高度（像素）
     
     // 标签位置偏移（普通站点）
@@ -482,7 +481,6 @@ const labelPositions = computed(() => {
     ENDPOINT_LABEL_CORNER_BOTTOM_Y: 22,
     
     // 角度阈值
-    ADJACENT_PENALTY_ANGLE_THRESHOLD: 45,   // 相邻站惩罚：0° = 满惩罚，45° = 0
     PREFERRED_BONUS_ANGLE_THRESHOLD: 90,    // 优选方向奖励：0° = 满奖励，90° = 0
     INWARD_BONUS_ANGLE_MAX: 165,            // 内向奖励：此角度及以上获得满奖励
     INWARD_BONUS_ANGLE_MIN: 90,             // 内向奖励：此角度及以下无奖励
@@ -491,18 +489,18 @@ const labelPositions = computed(() => {
     BOXES_OVERLAP_PADDING: 4,               // 盒子重叠检测的默认内边距
     SEGMENT_BOX_OVERLAP_PADDING: 4,         // 线段-盒子重叠检测的内边距
     LABEL_COLLISION_PADDING: 3,             // 标签碰撞检测的内边距
-    SEGMENT_COLLISION_PADDING: 4,           // 线段碰撞检测的内边距
+    SEGMENT_COLLISION_PADDING: 3,           // 线段碰撞检测的内边距
     OVERLAP_RATIO_DIVISOR: 15,              // 重叠比例计算的除数
     
     // 惩罚值
-    ADJACENT_STATION_BASE_PENALTY: 120,     // 相邻站方向的最大惩罚（±45°）
-    SEGMENT_INTERSECTION_PENALTY_MIN: 200,  // 线段相交的最小惩罚
-    SEGMENT_INTERSECTION_PENALTY_MAX: 400,  // 线段相交的最大惩罚
-    SEGMENT_INTERSECTION_RATIO_THRESHOLD: 0.25, // 触发惩罚的最小重叠比例
+    SEGMENT_INTERSECTION_PENALTY_MIN: 120,  // 线段相交的最小惩罚
+    SEGMENT_INTERSECTION_PENALTY_MAX: 320,  // 线段相交的最大惩罚
+    SEGMENT_INTERSECTION_LENGTH_THRESHOLD: 14, // 触发惩罚的最小重叠长度（像素）
     PREV_LABEL_SAME_DIR_PENALTY_MAIN: 20,   // 与前站标签同方向的惩罚（上/下）
     PREV_LABEL_SAME_DIR_PENALTY_DIAGONAL: 10, // 与前站标签同方向的惩罚（对角）
     LABEL_COLLISION_BASE_PENALTY: 400,      // 标签碰撞的基础惩罚
-    LABEL_COLLISION_MIN_RATIO: 0.1,         // 最小碰撞比例
+    LABEL_COLLISION_MIN_RATIO: 0.1,         // 标签碰撞最小惩罚比例
+    LABEL_COLLISION_MIN_OVERLAP_LENGTH: 5,  // 任意维度重叠小于此值不认为碰撞（像素）
     
     // 奖励值
     PREFERRED_DIRECTION_BASE_BONUS: 40,     // 优选方向的基础奖励
@@ -533,16 +531,6 @@ const labelPositions = computed(() => {
     }
     
     return { left, right, top: y - CONFIG.TEXT_HEIGHT, bottom: y }
-  }
-  
-  // 检查两个盒子是否重叠
-  // padding: 盒子周围的额外边距，用于更敏感的检测
-  const boxesOverlap = (box1, box2, padding = CONFIG.BOXES_OVERLAP_PADDING) => {
-    // 通过 padding 扩展两个盒子以进行更敏感的检测
-    return !(box1.right + padding < box2.left - padding || 
-             box1.left - padding > box2.right + padding || 
-             box1.bottom + padding < box2.top - padding || 
-             box1.top - padding > box2.bottom + padding)
   }
   
   // 归一化向量
@@ -577,8 +565,8 @@ const labelPositions = computed(() => {
   // 检查线段是否与矩形（盒子）相交
   // 使用 Liang-Barsky 算法进行线段-盒子相交检测
   // padding: 盒子周围的额外边距，用于更敏感的检测
-  // 返回值: 重叠比例（0-1），表示线段在盒子内的部分
-  const getSegmentBoxOverlapRatio = (A, B, box, padding = CONFIG.SEGMENT_BOX_OVERLAP_PADDING) => {
+  // 返回值: 重叠长度（像素），表示线段在盒子内的实际长度
+  const getSegmentBoxOverlapLength = (A, B, box, padding = CONFIG.SEGMENT_BOX_OVERLAP_PADDING) => {
     const dx = B.x - A.x
     const dy = B.y - A.y
     const segmentLength = Math.sqrt(dx * dx + dy * dy)
@@ -616,8 +604,8 @@ const labelPositions = computed(() => {
     
     if (t0 > t1) return 0 // 无相交
     
-    // 计算重叠比例（线段在盒子内的部分）
-    return t1 - t0
+    // 计算重叠长度（线段在盒子内的实际像素长度）
+    return (t1 - t0) * segmentLength
   }
   
   // 根据方向名称获取方向向量
@@ -635,24 +623,10 @@ const labelPositions = computed(() => {
     return vectors[dir] || { x: 0, y: -1 }
   }
   
-  // 计算角度比例：向量同向时为 1，角度 >= 阈值时为 0
-  // 使用基于角度的线性插值：0° = 1，阈值° = 0
-  // 返回值范围 [0, 1]，用于惩罚计算（已截断）
-  const getAngleRatio = (v1, v2) => {
-    const dot = v1.x * v2.x + v1.y * v2.y
-    // 将点积截断到 [-1, 1] 以处理浮点误差
-    const clampedDot = Math.max(-1, Math.min(1, dot))
-    // 计算弧度角，然后转换为度数
-    const angleRad = Math.acos(clampedDot)
-    const angleDeg = angleRad * 180 / Math.PI
-    // 线性插值：0° = 1，阈值° = 0
-    return Math.max(0, 1 - angleDeg / CONFIG.ADJACENT_PENALTY_ANGLE_THRESHOLD)
-  }
-  
   // 计算优选方向奖励的角度比例：向量同向时为 1，角度 >= 阈值时为 0
   // 使用基于角度的线性插值：0° = 1，阈值° = 0
   // 返回值范围 [0, 1]，用于奖励计算（已截断）
-  const getAngleRatio90 = (v1, v2) => {
+  const getAngleRatio = (v1, v2) => {
     const dot = v1.x * v2.x + v1.y * v2.y
     // 将点积截断到 [-1, 1] 以处理浮点误差
     const clampedDot = Math.max(-1, Math.min(1, dot))
@@ -663,26 +637,27 @@ const labelPositions = computed(() => {
     return Math.max(0, 1 - angleDeg / CONFIG.PREFERRED_BONUS_ANGLE_THRESHOLD)
   }
   
-  // 计算两个盒子之间的重叠比例
-  // r1 = min(1, (a.right+padding+padding-b.left) / 15)
-  // r2 = min(1, (a.bottom+padding+padding-b.top) / 15)
-  // 返回 r1 * r2 作为惩罚比例
+  // 计算两个盒子之间的实际重叠比例
+  // 返回重叠面积占较小盒子面积的比例 (0-1)
   const getOverlapRatio = (box1, box2, padding = 0) => {
-    // 计算水平重叠比例
-    const rightMax = Math.max(box1.right, box2.right)
-    const leftMin = Math.min(box1.left, box2.left)
-    const horizontalOverlap = rightMax - leftMin + padding * 2
-    if (horizontalOverlap <= 0) return 0
-    const r1 = Math.min(1, horizontalOverlap / CONFIG.OVERLAP_RATIO_DIVISOR)
+    // 计算实际重叠区域
+    const overlapLeft = Math.max(box1.left, box2.left)
+    const overlapRight = Math.min(box1.right, box2.right)
+    const overlapTop = Math.max(box1.top, box2.top)
+    const overlapBottom = Math.min(box1.bottom, box2.bottom)
     
-    // 计算垂直重叠比例
-    const bottomMax = Math.max(box1.bottom, box2.bottom)
-    const topMin = Math.min(box1.top, box2.top)
-    const verticalOverlap = bottomMax - topMin + padding * 2
-    if (verticalOverlap <= 0) return 0
-    const r2 = Math.min(1, verticalOverlap / CONFIG.OVERLAP_RATIO_DIVISOR)
+    const overlapWidth = overlapRight - overlapLeft + padding * 2
+    const overlapHeight = overlapBottom - overlapTop + padding * 2
     
-    return r1 * r2
+    // 如果没有重叠，返回 0
+    if (overlapWidth <= 0 || overlapHeight <= 0) return 0
+    
+    // 如果任意维度重叠小于阈值，不认为是碰撞
+    if (overlapWidth < CONFIG.LABEL_COLLISION_MIN_OVERLAP_LENGTH || 
+        overlapHeight < CONFIG.LABEL_COLLISION_MIN_OVERLAP_LENGTH) return 0
+    
+    const overlapRatio = Math.min(1, (overlapWidth * overlapHeight) / (CONFIG.OVERLAP_RATIO_DIVISOR * CONFIG.OVERLAP_RATIO_DIVISOR))
+    return overlapRatio
   }
   
   // === 步骤1：收集所有线段及其索引 ===
@@ -699,389 +674,349 @@ const labelPositions = computed(() => {
     }
   }
   
-  // === 步骤2：按顺序处理每个站点 ===
-  for (let index = 0; index < path.length; index++) {
-    const station = path[index]
-    const coord = coordinates.value[station]
-    const isEndpointStation = isEndpoint(station)
-    const isDebugStation = station === DEBUG_STATION
+  // === 检查 DEBUG_STATION 是否在路径中 ===
+  const debugStationInPath = path.includes(DEBUG_STATION)
+  
+  // === 核心函数：计算给定路径顺序的标签位置 ===
+  // orderedPath: 按处理顺序排列的站点数组
+  // isReverse: 是否是反向处理（用于调试输出）
+  // 返回: { result: 标签位置映射, lowestScore: 最低分, lowestStation: 最低分站点 }
+  const computeLabelPositionsForPath = (orderedPath, isReverse = false) => {
+    const result = {}
+    const placedLabels = [] // 记录已放置的标签边界框
+    let lowestScore = Infinity
+    let lowestStationInfo = null
     
-    if (!coord) {
-      result[station] = { x: 0, y: -16, anchor: 'middle', name: 'top' }
-      continue
-    }
+    // 记录每个站点的调试信息（用于找最低分站点）
+    const stationDebugInfo = []
     
-    // 定义候选位置
-    const topY = isEndpointStation ? CONFIG.ENDPOINT_LABEL_TOP_Y : CONFIG.LABEL_TOP_Y
-    const bottomY = isEndpointStation ? CONFIG.ENDPOINT_LABEL_BOTTOM_Y : CONFIG.LABEL_BOTTOM_Y
-    const sideX = isEndpointStation ? CONFIG.ENDPOINT_LABEL_SIDE_X : CONFIG.LABEL_SIDE_X
-    const cornerX = isEndpointStation ? CONFIG.ENDPOINT_LABEL_CORNER_X : CONFIG.LABEL_CORNER_X
-    const cornerTopY = isEndpointStation ? CONFIG.ENDPOINT_LABEL_CORNER_TOP_Y : CONFIG.LABEL_CORNER_TOP_Y
-    const cornerBottomY = isEndpointStation ? CONFIG.ENDPOINT_LABEL_CORNER_BOTTOM_Y : CONFIG.LABEL_CORNER_BOTTOM_Y
-    
-    const positions = {
-      'top': { x: 0, y: topY, anchor: 'middle', name: 'top' },
-      'bottom': { x: 0, y: bottomY, anchor: 'middle', name: 'bottom' },
-      'left': { x: -sideX, y: CONFIG.LABEL_SIDE_Y, anchor: 'end', name: 'left' },
-      'right': { x: sideX, y: CONFIG.LABEL_SIDE_Y, anchor: 'start', name: 'right' },
-      'top-left': { x: -cornerX, y: cornerTopY, anchor: 'end', name: 'top-left' },
-      'top-right': { x: cornerX, y: cornerTopY, anchor: 'start', name: 'top-right' },
-      'bottom-left': { x: -cornerX, y: cornerBottomY, anchor: 'end', name: 'bottom-left' },
-      'bottom-right': { x: cornerX, y: cornerBottomY, anchor: 'start', name: 'bottom-right' }
-    }
-    
-    const allDirections = ['top', 'bottom', 'left', 'right', 'top-left', 'top-right', 'bottom-left', 'bottom-right']
-    
-    // 初始化方向惩罚
-    const directionPenalty = {}
-    for (const dir of allDirections) {
-      directionPenalty[dir] = 0
-    }
-    
-    // 获取相邻站点坐标
-    const prevCoord = index > 0 ? coordinates.value[path[index - 1]] : null
-    const nextCoord = index < path.length - 1 ? coordinates.value[path[index + 1]] : null
-    const prevStation = index > 0 ? path[index - 1] : null
-    
-    // === 根据相邻站点对方向进行惩罚 ===
-    
-    // 跟踪每个来源的惩罚，用于调试
-    const prevStationPenalty = {}
-    const nextStationPenalty = {}
-    for (const dir of allDirections) {
-      prevStationPenalty[dir] = 0
-      nextStationPenalty[dir] = 0
-    }
-    
-    // 辅助函数：获取最接近标签方向的三个边缘中点
-    // 对于 'top'：左上角、右上角、上中点
-    // 对于 'bottom-left'：左中点、左下角、下中点
-    const getBoxEdgeMidpointsForDirection = (box, direction) => {
-      const topCenter = { x: (box.left + box.right) / 2, y: box.top }
-      const bottomCenter = { x: (box.left + box.right) / 2, y: box.bottom }
-      const leftCenter = { x: box.left, y: (box.top + box.bottom) / 2 }
-      const rightCenter = { x: box.right, y: (box.top + box.bottom) / 2 }
-      const topLeft = { x: box.left, y: box.top }
-      const topRight = { x: box.right, y: box.top }
-      const bottomLeft = { x: box.left, y: box.bottom }
-      const bottomRight = { x: box.right, y: box.bottom }
+    for (let i = 0; i < orderedPath.length; i++) {
+      const station = orderedPath[i]
+      // 在原始路径中的索引（用于获取正确的相邻站点）
+      const originalIndex = path.indexOf(station)
+      const coord = coordinates.value[station]
+      const isEndpointStation = isEndpoint(station)
+      const isDebugStation = station === DEBUG_STATION
       
-      // 返回最接近标签方向的 3 个点
-      const directionPoints = {
-        'top': [topLeft, topCenter, topRight],
-        'bottom': [bottomLeft, bottomCenter, bottomRight],
-        'left': [topLeft, leftCenter, bottomLeft],
-        'right': [topRight, rightCenter, bottomRight],
-        'top-left': [topLeft, topCenter, leftCenter],
-        'top-right': [topRight, topCenter, rightCenter],
-        'bottom-left': [bottomLeft, bottomCenter, leftCenter],
-        'bottom-right': [bottomRight, bottomCenter, rightCenter]
+      if (!coord) {
+        result[station] = { x: 0, y: -16, anchor: 'middle', name: 'top' }
+        continue
       }
       
-      return directionPoints[direction] || [topCenter, bottomCenter, leftCenter]
-    }
-    
-    // 辅助函数：计算站点到中点和站点到相邻站之间的最大角度比例
-    // 我们需要最大的角度比例（最小的角度），因为它代表最接近相邻站的边缘
-    // 现在根据标签方向使用 3 个点，而不是所有 4 个中点
-    const getMaxAngleRatioForBox = (stationCoord, labelBox, adjacentCoord, labelDirection) => {
-      const vecToAdjacent = normalize({ x: adjacentCoord.x - stationCoord.x, y: adjacentCoord.y - stationCoord.y })
-      const points = getBoxEdgeMidpointsForDirection(labelBox, labelDirection)
+      // 定义候选位置
+      const topY = isEndpointStation ? CONFIG.ENDPOINT_LABEL_TOP_Y : CONFIG.LABEL_TOP_Y
+      const bottomY = isEndpointStation ? CONFIG.ENDPOINT_LABEL_BOTTOM_Y : CONFIG.LABEL_BOTTOM_Y
+      const sideX = isEndpointStation ? CONFIG.ENDPOINT_LABEL_SIDE_X : CONFIG.LABEL_SIDE_X
+      const cornerX = isEndpointStation ? CONFIG.ENDPOINT_LABEL_CORNER_X : CONFIG.LABEL_CORNER_X
+      const cornerTopY = isEndpointStation ? CONFIG.ENDPOINT_LABEL_CORNER_TOP_Y : CONFIG.LABEL_CORNER_TOP_Y
+      const cornerBottomY = isEndpointStation ? CONFIG.ENDPOINT_LABEL_CORNER_BOTTOM_Y : CONFIG.LABEL_CORNER_BOTTOM_Y
       
-      let maxAngleRatio = 0
-      for (const point of points) {
-        const vecToPoint = normalize({ x: point.x - stationCoord.x, y: point.y - stationCoord.y })
-        const angleRatio = getAngleRatio(vecToPoint, vecToAdjacent)
-        if (angleRatio > maxAngleRatio) {
-          maxAngleRatio = angleRatio
-        }
+      const positions = {
+        'top': { x: 0, y: topY, anchor: 'middle', name: 'top' },
+        'bottom': { x: 0, y: bottomY, anchor: 'middle', name: 'bottom' },
+        'left': { x: -sideX, y: CONFIG.LABEL_SIDE_Y, anchor: 'end', name: 'left' },
+        'right': { x: sideX, y: CONFIG.LABEL_SIDE_Y, anchor: 'start', name: 'right' },
+        'top-left': { x: -cornerX, y: cornerTopY, anchor: 'end', name: 'top-left' },
+        'top-right': { x: cornerX, y: cornerTopY, anchor: 'start', name: 'top-right' },
+        'bottom-left': { x: -cornerX, y: cornerBottomY, anchor: 'end', name: 'bottom-left' },
+        'bottom-right': { x: cornerX, y: cornerBottomY, anchor: 'start', name: 'bottom-right' }
       }
       
-      return maxAngleRatio
-    }
-    
-    // 与前一站（C）的直接连接
-    if (prevCoord) {
-      const vecToPrev = normalize({ x: prevCoord.x - coord.x, y: prevCoord.y - coord.y })
+      const allDirections = ['top', 'bottom', 'left', 'right', 'top-left', 'top-right', 'bottom-left', 'bottom-right']
+      
+      // 获取相邻站点坐标（基于原始路径顺序）
+      const prevCoord = originalIndex > 0 ? coordinates.value[path[originalIndex - 1]] : null
+      const nextCoord = originalIndex < path.length - 1 ? coordinates.value[path[originalIndex + 1]] : null
+      
+      // 获取处理顺序中的前一个站点（用于前站标签惩罚）
+      const prevProcessedStation = i > 0 ? orderedPath[i - 1] : null
+      
+      // === 检查标签框与所有线段的相交 ===
+      
+      // 单独跟踪线段相交惩罚，用于调试
+      const segmentPenalty = {}
+      const segmentMaxRatio = {} // Track max overlap ratio for debugging
+      for (const dir of allDirections) {
+        segmentPenalty[dir] = 0
+        segmentMaxRatio[dir] = 0
+      }
       
       for (const dir of allDirections) {
         const pos = positions[dir]
         const labelBox = getLabelBox(coord, pos, pos.anchor, station)
-        const angleRatio = getMaxAngleRatioForBox(coord, labelBox, prevCoord, dir)
-        if (angleRatio > 0) {
-          const penalty = CONFIG.ADJACENT_STATION_BASE_PENALTY * angleRatio
-          directionPenalty[dir] += penalty
-          prevStationPenalty[dir] = penalty
-        }
-      }
-      
-      if (isDebugStation) {
-        const prevDir = getDirectionFromVector(vecToPrev)
-        console.log(`前一站方向: ${prevDir} (向量: ${vecToPrev.x.toFixed(3)}, ${vecToPrev.y.toFixed(3)})`)
-      }
-    }
-    
-    // 与后一站（E）的直接连接
-    if (nextCoord) {
-      const vecToNext = normalize({ x: nextCoord.x - coord.x, y: nextCoord.y - coord.y })
-      
-      for (const dir of allDirections) {
-        const pos = positions[dir]
-        const labelBox = getLabelBox(coord, pos, pos.anchor, station)
-        const angleRatio = getMaxAngleRatioForBox(coord, labelBox, nextCoord, dir)
-        if (angleRatio > 0) {
-          const penalty = CONFIG.ADJACENT_STATION_BASE_PENALTY * angleRatio
-          directionPenalty[dir] += penalty
-          nextStationPenalty[dir] = penalty
-        }
-      }
-      
-      if (isDebugStation) {
-        const nextDir = getDirectionFromVector(vecToNext)
-        console.log(`后一站方向: ${nextDir} (向量: ${vecToNext.x.toFixed(3)}, ${vecToNext.y.toFixed(3)})`)
-        console.log('')
-        console.log('各方向相邻站惩罚明细:')
-        for (const dir of allDirections) {
-          if (prevStationPenalty[dir] > 0 || nextStationPenalty[dir] > 0) {
-            console.log(`  ${dir.padEnd(12)}: 前站=${prevStationPenalty[dir].toFixed(1).padStart(6)}, 后站=${nextStationPenalty[dir].toFixed(1).padStart(6)}, 合计=${(prevStationPenalty[dir] + nextStationPenalty[dir]).toFixed(1).padStart(6)}`)
+        
+        let maxOverlapLength = 0
+        
+        // 检查所有线段（包括相邻线段）
+        for (const seg of allLineSegments) {
+          const A = { x: seg.x1, y: seg.y1 }
+          const B = { x: seg.x2, y: seg.y2 }
+          
+          const overlapLength = getSegmentBoxOverlapLength(A, B, labelBox, CONFIG.SEGMENT_COLLISION_PADDING)
+          if (overlapLength > maxOverlapLength) {
+            maxOverlapLength = overlapLength
           }
         }
-        console.log('')
-      }
-    }
-    
-    // === 检查标签框与所有线段的相交 ===
-    
-    // 单独跟踪线段相交惩罚，用于调试
-    const segmentPenalty = {}
-    const segmentMaxRatio = {} // Track max overlap ratio for debugging
-    for (const dir of allDirections) {
-      segmentPenalty[dir] = 0
-      segmentMaxRatio[dir] = 0
-    }
-    
-    for (const dir of allDirections) {
-      const pos = positions[dir]
-      const labelBox = getLabelBox(coord, pos, pos.anchor, station)
-      
-      let maxOverlapRatio = 0
-      
-      // 检查所有线段
-      for (const seg of allLineSegments) {
-        // 跳过连接到当前站点的线段（相邻线段）
-        // 标签预期在站点附近，因此无需碰撞检测
-        const isConnectedSegment = (seg.fromIndex === index || seg.toIndex === index)
-        if (isConnectedSegment) continue
         
-        const A = { x: seg.x1, y: seg.y1 }
-        const B = { x: seg.x2, y: seg.y2 }
-        
-        const overlapRatio = getSegmentBoxOverlapRatio(A, B, labelBox, CONFIG.SEGMENT_COLLISION_PADDING)
-        if (overlapRatio > maxOverlapRatio) {
-          maxOverlapRatio = overlapRatio
+        // 根据最大重叠长度计算惩罚（200-400）
+        // 仅当重叠长度 >= 阈值时才应用惩罚
+        if (maxOverlapLength >= CONFIG.SEGMENT_INTERSECTION_LENGTH_THRESHOLD) {
+          // 使用重叠长度计算惩罚，假设最大重叠长度为标签宽度（约42像素）
+          const maxExpectedLength = estimateTextWidth(station)
+          const lengthRatio = Math.min(1, maxOverlapLength / maxExpectedLength)
+          const penalty = CONFIG.SEGMENT_INTERSECTION_PENALTY_MIN + 
+            (CONFIG.SEGMENT_INTERSECTION_PENALTY_MAX - CONFIG.SEGMENT_INTERSECTION_PENALTY_MIN) * lengthRatio
+          segmentPenalty[dir] = penalty
+          segmentMaxRatio[dir] = maxOverlapLength // Now stores length instead of ratio
         }
       }
       
-      // 根据最大重叠比例计算惩罚（200-400）
-      // 仅当重叠比例 >= 10% 时才应用惩罚
-      if (maxOverlapRatio >= CONFIG.SEGMENT_INTERSECTION_RATIO_THRESHOLD) {
-        const penalty = CONFIG.SEGMENT_INTERSECTION_PENALTY_MIN + 
-          (CONFIG.SEGMENT_INTERSECTION_PENALTY_MAX - CONFIG.SEGMENT_INTERSECTION_PENALTY_MIN) * maxOverlapRatio
-        directionPenalty[dir] += penalty
-        segmentPenalty[dir] = penalty
-        segmentMaxRatio[dir] = maxOverlapRatio
-      }
-    }
-    
-    // === 惩罚前一站标签使用的方向 ===
-    // 仅惩罚完全相同的方向，且仅针对上/下或对角方向
-    // 左/右标签不产生惩罚
-    const prevLabelPos = prevStation ? result[prevStation] : null
-    if (prevLabelPos) {
-      const prevDir = prevLabelPos.name
-      if (prevDir === 'top' || prevDir === 'bottom') {
-        directionPenalty[prevDir] += CONFIG.PREV_LABEL_SAME_DIR_PENALTY_MAIN
-      } else if (prevDir.includes('-')) {
-        directionPenalty[prevDir] += CONFIG.PREV_LABEL_SAME_DIR_PENALTY_DIAGONAL
-      }
-      // 左/右：无惩罚
-    }
-    
-    // === 检查与已放置标签的碰撞 ===
-    const labelCollisionPenalty = {}
-    for (const dir of allDirections) {
-      labelCollisionPenalty[dir] = 0
-      const pos = positions[dir]
-      const labelBox = getLabelBox(coord, pos, pos.anchor, station)
-      for (const placed of placedLabels) {
-        if (boxesOverlap(labelBox, placed.box, CONFIG.LABEL_COLLISION_PADDING)) {
+      // === 惩罚前一站标签使用的方向 ===
+      // 仅惩罚完全相同的方向，且仅针对上/下或对角方向
+      // 左/右标签不产生惩罚
+      const prevLabelPos = prevProcessedStation ? result[prevProcessedStation] : null
+      // 前站标签惩罚将在评分循环中直接应用
+      
+      // === 检查与已放置标签的碰撞 ===
+      const labelCollisionPenalty = {}
+      for (const dir of allDirections) {
+        labelCollisionPenalty[dir] = 0
+        const pos = positions[dir]
+        const labelBox = getLabelBox(coord, pos, pos.anchor, station)
+        for (const placed of placedLabels) {
           const overlapRatio = getOverlapRatio(labelBox, placed.box, CONFIG.LABEL_COLLISION_PADDING)
-          labelCollisionPenalty[dir] += CONFIG.LABEL_COLLISION_BASE_PENALTY * Math.max(overlapRatio, CONFIG.LABEL_COLLISION_MIN_RATIO)
+          if (overlapRatio > 0) {
+            labelCollisionPenalty[dir] += CONFIG.LABEL_COLLISION_BASE_PENALTY * Math.max(overlapRatio, CONFIG.LABEL_COLLISION_MIN_RATIO)
+          }
         }
       }
-    }
-    
-    // === 根据几何形状确定优选方向 ===
-    // 存储实际的理想外向向量，用于基于角度的奖励计算
-    let idealOutwardVec = null
-    let idealInwardVec = null  // 角平分线方向（在前后站之间）
-    let inwardBonusRatio = 0   // 内向方向奖励比例（基于前后站之间的夹角）
-    let preferredDirections = []
-    
-    if (prevCoord && nextCoord) {
-      const toW = normalize({ x: prevCoord.x - coord.x, y: prevCoord.y - coord.y })
-      const toY = normalize({ x: nextCoord.x - coord.x, y: nextCoord.y - coord.y })
-      // 拐角处：优先选择角平分线的反方向
-      const bisector = normalize({ x: toW.x + toY.x, y: toW.y + toY.y })
-      idealOutwardVec = { x: -bisector.x, y: -bisector.y }
-      idealInwardVec = bisector
       
-      // 计算前后站方向之间的夹角（以度为单位）
-      // 这是该站点的
-      const dot = toW.x * toY.x + toW.y * toY.y
-      const clampedDot = Math.max(-1, Math.min(1, dot))
-      const angleBetweenRad = Math.acos(clampedDot)
-      const angleBetweenDeg = angleBetweenRad * 180 / Math.PI
+      // === 根据几何形状确定优选方向 ===
+      // 存储实际的理想外向向量，用于基于角度的奖励计算
+      let idealOutwardVec = null
+      let idealInwardVec = null  // 角平分线方向（在前后站之间）
+      let inwardBonusRatio = 0   // 内向方向奖励比例（基于前后站之间的夹角）
+      let preferredDirections = []
       
-      // 根据 CONFIG 中的角度阈值计算内向奖励比例
-      // angleBetweenDeg 是指向相邻站的两个向量之间的夹角
-      // 角度越大表示越接近直线，角度越小表示越急的拐弯
-      if (angleBetweenDeg >= CONFIG.INWARD_BONUS_ANGLE_MAX) {
-        inwardBonusRatio = 1  // 在最大角度及以上获得满奖励
-      } else if (angleBetweenDeg > CONFIG.INWARD_BONUS_ANGLE_MIN) {
-        const range = CONFIG.INWARD_BONUS_ANGLE_MAX - CONFIG.INWARD_BONUS_ANGLE_MIN
-        inwardBonusRatio = (angleBetweenDeg - CONFIG.INWARD_BONUS_ANGLE_MIN) / range
+      if (prevCoord && nextCoord) {
+        const toW = normalize({ x: prevCoord.x - coord.x, y: prevCoord.y - coord.y })
+        const toY = normalize({ x: nextCoord.x - coord.x, y: nextCoord.y - coord.y })
+        // 拐角处：优先选择角平分线的反方向
+        const bisector = normalize({ x: toW.x + toY.x, y: toW.y + toY.y })
+        idealOutwardVec = { x: -bisector.x, y: -bisector.y }
+        idealInwardVec = bisector
+        
+        // 计算前后站方向之间的夹角（以度为单位）
+        // 这是该站点的
+        const dot = toW.x * toY.x + toW.y * toY.y
+        const clampedDot = Math.max(-1, Math.min(1, dot))
+        const angleBetweenRad = Math.acos(clampedDot)
+        const angleBetweenDeg = angleBetweenRad * 180 / Math.PI
+        
+        // 根据 CONFIG 中的角度阈值计算内向奖励比例
+        // angleBetweenDeg 是指向相邻站的两个向量之间的夹角
+        // 角度越大表示越接近直线，角度越小表示越急的拐弯
+        if (angleBetweenDeg >= CONFIG.INWARD_BONUS_ANGLE_MAX) {
+          inwardBonusRatio = 1  // 在最大角度及以上获得满奖励
+        } else if (angleBetweenDeg > CONFIG.INWARD_BONUS_ANGLE_MIN) {
+          const range = CONFIG.INWARD_BONUS_ANGLE_MAX - CONFIG.INWARD_BONUS_ANGLE_MIN
+          inwardBonusRatio = (angleBetweenDeg - CONFIG.INWARD_BONUS_ANGLE_MIN) / range
+        } else {
+          inwardBonusRatio = 0
+        }
+        
+        const preferredDir = getDirectionFromVector(idealOutwardVec)
+        preferredDirections = [preferredDir]
+        const adjacentDirs = {
+          'top': ['top-left', 'top-right'],
+          'bottom': ['bottom-left', 'bottom-right'],
+          'left': ['top-left', 'bottom-left'],
+          'right': ['top-right', 'bottom-right'],
+          'top-left': ['top', 'left'],
+          'top-right': ['top', 'right'],
+          'bottom-left': ['bottom', 'left'],
+          'bottom-right': ['bottom', 'right']
+        }
+        preferredDirections = preferredDirections.concat(adjacentDirs[preferredDir] || [])
+      } else if (prevCoord) {
+        const toPrev = normalize({ x: prevCoord.x - coord.x, y: prevCoord.y - coord.y })
+        idealOutwardVec = { x: -toPrev.x, y: -toPrev.y }
+        preferredDirections = getPerpendicularDirections(toPrev)
+        const awayDir = getDirectionFromVector(idealOutwardVec)
+        preferredDirections.unshift(awayDir)
+      } else if (nextCoord) {
+        const toNext = normalize({ x: nextCoord.x - coord.x, y: nextCoord.y - coord.y })
+        idealOutwardVec = { x: -toNext.x, y: -toNext.y }
+        preferredDirections = getPerpendicularDirections(toNext)
+        const awayDir = getDirectionFromVector(idealOutwardVec)
+        preferredDirections.unshift(awayDir)
       } else {
-        inwardBonusRatio = 0
+        preferredDirections = ['top', 'bottom', 'left', 'right']
       }
       
-      const preferredDir = getDirectionFromVector(idealOutwardVec)
-      preferredDirections = [preferredDir]
-      const adjacentDirs = {
-        'top': ['top-left', 'top-right'],
-        'bottom': ['bottom-left', 'bottom-right'],
-        'left': ['top-left', 'bottom-left'],
-        'right': ['top-right', 'bottom-right'],
-        'top-left': ['top', 'left'],
-        'top-right': ['top', 'right'],
-        'bottom-left': ['bottom', 'left'],
-        'bottom-right': ['bottom', 'right']
+      // === 评分并选择最佳位置 ===
+      let bestPos = positions['top']
+      let bestScore = -Infinity
+      
+      if (isDebugStation) {
+        const direction = isReverse ? '反向' : '正向'
+        console.log(`[${direction}] 站点：${station} | 上一站：${path[originalIndex - 1] || '无'} | 下一站：${path[originalIndex + 1] || '无'}`)
       }
-      preferredDirections = preferredDirections.concat(adjacentDirs[preferredDir] || [])
-    } else if (prevCoord) {
-      const toPrev = normalize({ x: prevCoord.x - coord.x, y: prevCoord.y - coord.y })
-      idealOutwardVec = { x: -toPrev.x, y: -toPrev.y }
-      preferredDirections = getPerpendicularDirections(toPrev)
-      const awayDir = getDirectionFromVector(idealOutwardVec)
-      preferredDirections.unshift(awayDir)
-    } else if (nextCoord) {
-      const toNext = normalize({ x: nextCoord.x - coord.x, y: nextCoord.y - coord.y })
-      idealOutwardVec = { x: -toNext.x, y: -toNext.y }
-      preferredDirections = getPerpendicularDirections(toNext)
-      const awayDir = getDirectionFromVector(idealOutwardVec)
-      preferredDirections.unshift(awayDir)
-    } else {
-      preferredDirections = ['top', 'bottom', 'left', 'right']
-    }
-    
-    // === 评分并选择最佳位置 ===
-    let bestPos = positions['top']
-    let bestScore = -Infinity
-    
-    if (isDebugStation) {
-      console.log(`\n========== ${station} 标签位置计算 ==========`)
-      console.log(`站点坐标: (${coord.x.toFixed(2)}, ${coord.y.toFixed(2)})`)
-      console.log(`前一站: ${path[index - 1] || '无'}`)
-      console.log(`后一站: ${path[index + 1] || '无'}`)
-      console.log(`优选方向: ${preferredDirections.join(', ')}`)
-      console.log(`前一站标签方向: ${prevLabelPos?.name || '无'}`)
-      console.log('')
-    }
-    
-    for (const dirName of allDirections) {
-      let score = 0
-      const scoreDetails = { adjacentPenalty: 0, segmentPenalty: 0, labelCollision: 0, preferredBonus: 0, cardinalBonus: 0 }
       
-      // 应用线段邻近惩罚
-      score -= directionPenalty[dirName]
-      scoreDetails.adjacentPenalty = -directionPenalty[dirName]
-      
-      // 应用标签碰撞惩罚
-      score -= labelCollisionPenalty[dirName]
-      scoreDetails.labelCollision = -labelCollisionPenalty[dirName]
-      
-      // 基于与理想外向方向的角度比例给予优选方向奖励
-      // 使用 90° 范围：0° = 满奖励，90° = 无奖励
-      // 使用实际的 idealOutwardVec 进行精确的角度计算
-      // 奖励总和始终为 2 倍基础奖励：
-      //   - 当夹角 > 120°：外向获得 (1 + (1 - inwardBonusRatio))，内向获得 inwardBonusRatio
-      //   - 当夹角 <= 120°：外向获得 2 倍，内向获得 0
-      if (idealOutwardVec) {
-        const dirVec = getVectorFromDirection(dirName)
-        const angleRatioOutward = getAngleRatio90(dirVec, idealOutwardVec)
-        let bonus = 0
+      for (const dirName of allDirections) {
+        let score = 0
+        const scoreDetails = { segmentPenalty: 0, labelCollision: 0, preferredBonus: 0, cardinalBonus: 0 }
         
-        // 计算外向乘数：当存在 inwardBonusRatio 时，外向获得内向
-        const outwardMultiplier = 1 + (1 - inwardBonusRatio)
+        // 应用线段碰撞惩罚
+        score -= segmentPenalty[dirName]
+        scoreDetails.segmentPenalty = -segmentPenalty[dirName]
         
-        if (angleRatioOutward > 0) {
-          bonus = CONFIG.PREFERRED_DIRECTION_BASE_BONUS * angleRatioOutward * outwardMultiplier
-        }
-        
-        // 内向方向（角平分线）也获得奖励，按 inwardBonusRatio 缩放
-        // 当轨道相对平直时（夹角 > 120°）生效
-        if (idealInwardVec && inwardBonusRatio > 0) {
-          const angleRatioInward = getAngleRatio90(dirVec, idealInwardVec)
-          if (angleRatioInward > 0) {
-            const inwardBonus = CONFIG.PREFERRED_DIRECTION_BASE_BONUS * angleRatioInward * inwardBonusRatio
-            bonus = Math.max(bonus, inwardBonus)  // 取较高的奖励
+        // 应用前站标签方向惩罚
+        if (prevLabelPos && prevLabelPos.name === dirName) {
+          if (dirName === 'top' || dirName === 'bottom') {
+            score -= CONFIG.PREV_LABEL_SAME_DIR_PENALTY_MAIN
+          } else if (dirName.includes('-')) {
+            score -= CONFIG.PREV_LABEL_SAME_DIR_PENALTY_DIAGONAL
           }
         }
         
-        if (bonus > 0) {
-          score += bonus
-          scoreDetails.preferredBonus = bonus
+        // 应用标签碰撞惩罚
+        score -= labelCollisionPenalty[dirName]
+        scoreDetails.labelCollision = -labelCollisionPenalty[dirName]
+        
+        // 基于与理想外向方向的角度比例给予优选方向奖励
+        // 使用 90° 范围：0° = 满奖励，90° = 无奖励
+        // 使用实际的 idealOutwardVec 进行精确的角度计算
+        // 奖励总和始终为 2 倍基础奖励：
+        //   - 当夹角 > 120°：外向获得 (1 + (1 - inwardBonusRatio))，内向获得 inwardBonusRatio
+        //   - 当夹角 <= 120°：外向获得 2 倍，内向获得 0
+        if (idealOutwardVec) {
+          const dirVec = getVectorFromDirection(dirName)
+          const angleRatioOutward = getAngleRatio(dirVec, idealOutwardVec)
+          let bonus = 0
+          
+          // 计算外向乘数：当存在 inwardBonusRatio 时，外向获得内向
+          const outwardMultiplier = 1 + (1 - inwardBonusRatio)
+          
+          if (angleRatioOutward > 0) {
+            bonus = CONFIG.PREFERRED_DIRECTION_BASE_BONUS * angleRatioOutward * outwardMultiplier
+          }
+          
+          // 内向方向（角平分线）也获得奖励，按 inwardBonusRatio 缩放
+          // 当轨道相对平直时（夹角 > 120°）生效
+          if (idealInwardVec && inwardBonusRatio > 0) {
+            const angleRatioInward = getAngleRatio(dirVec, idealInwardVec)
+            if (angleRatioInward > 0) {
+              const inwardBonus = CONFIG.PREFERRED_DIRECTION_BASE_BONUS * angleRatioInward * inwardBonusRatio
+              bonus = Math.max(bonus, inwardBonus)  // 取较高的奖励
+            }
+          }
+          
+          if (bonus > 0) {
+            score += bonus
+            scoreDetails.preferredBonus = bonus
+          }
+        }
+        
+        // 主方向相比对角方向略有优势
+        if (['top', 'bottom', 'left', 'right'].includes(dirName)) {
+          score += CONFIG.CARDINAL_DIRECTION_BONUS
+          scoreDetails.cardinalBonus = CONFIG.CARDINAL_DIRECTION_BONUS
+        }
+        
+        // 收集调试信息
+        if (!debugStationInPath || isDebugStation) {
+          const prevLabelPenalty = (prevLabelPos && prevLabelPos.name === dirName) ? 
+            ((dirName === 'top' || dirName === 'bottom') ? CONFIG.PREV_LABEL_SAME_DIR_PENALTY_MAIN : 
+             (dirName.includes('-') ? CONFIG.PREV_LABEL_SAME_DIR_PENALTY_DIAGONAL : 0)) : 0
+          
+          const debugLine = `${dirName} = ${score.toFixed(0)} = ` +
+            `${(-segmentPenalty[dirName]).toFixed(0)}(线段碰撞) ` +
+            `${scoreDetails.labelCollision.toFixed(0)}(标签碰撞) ` +
+            `+${scoreDetails.preferredBonus.toFixed(0)}(优选方向) ` +
+            `${(-prevLabelPenalty).toFixed(0)}(前站标签) ` +
+            `+${scoreDetails.cardinalBonus}(主方向)`
+          
+          if (isDebugStation) {
+            console.log(debugLine)
+          }
+          
+          // 记录当前方向的调试信息
+          if (!debugStationInPath) {
+            if (!stationDebugInfo[i]) {
+              stationDebugInfo[i] = {
+                station,
+                prevStation: path[originalIndex - 1] || '无',
+                nextStation: path[originalIndex + 1] || '无',
+                directions: [],
+                bestScore: -Infinity,
+                bestDir: ''
+              }
+            }
+            stationDebugInfo[i].directions.push(debugLine)
+          }
+        }
+        
+        if (score > bestScore) {
+          bestScore = score
+          bestPos = positions[dirName]
         }
       }
       
-      // 主方向相比对角方向略有优势
-      if (['top', 'bottom', 'left', 'right'].includes(dirName)) {
-        score += CONFIG.CARDINAL_DIRECTION_BONUS
-        scoreDetails.cardinalBonus = CONFIG.CARDINAL_DIRECTION_BONUS
+      // 记录最终选择
+      if (!debugStationInPath) {
+        if (stationDebugInfo[i]) {
+          stationDebugInfo[i].bestScore = bestScore
+          stationDebugInfo[i].bestDir = bestPos.name
+        }
+      }
+      
+      // 更新最低分
+      if (bestScore < lowestScore) {
+        lowestScore = bestScore
+        lowestStationInfo = stationDebugInfo[i]
       }
       
       if (isDebugStation) {
-      // 仅计算相邻站惩罚（不包括线段惩罚）
-        const adjacentOnlyPenalty = (prevStationPenalty[dirName] || 0) + (nextStationPenalty[dirName] || 0)
-        const segRatio = segmentMaxRatio[dirName] || 0
-        
-        console.log(`[${dirName.padEnd(12)}] 总分: ${score.toFixed(1).padStart(7)} | ` +
-          `相邻站惩罚: ${(-adjacentOnlyPenalty).toFixed(1).padStart(7)} | ` +
-          `线段碰撞: ${segRatio > 0 ? (segRatio * 100).toFixed(0) + '%' : '无'} (${(-segmentPenalty[dirName]).toFixed(1)}) | ` +
-          `标签碰撞: ${scoreDetails.labelCollision.toFixed(1).padStart(7)} | ` +
-          `优选加分: ${scoreDetails.preferredBonus.toFixed(1).padStart(6)} | ` +
-          `主方向: ${scoreDetails.cardinalBonus}`)
+        console.log(`>>> 最终选择: ${bestPos.name} (${bestScore.toFixed(0)})`)
       }
       
-      if (score > bestScore) {
-        bestScore = score
-        bestPos = positions[dirName]
-      }
+      result[station] = bestPos
+      placedLabels.push({
+        station,
+        box: getLabelBox(coord, bestPos, bestPos.anchor, station)
+      })
     }
     
-    if (isDebugStation) {
-      console.log(`\n>>> 最终选择: ${bestPos.name}, 得分: ${bestScore.toFixed(1)}`)
-      console.log(`==========================================\n`)
+    return {
+      result,
+      lowestScore,
+      lowestStationInfo,
+      stationDebugInfo
     }
-    
-    result[station] = bestPos
-    placedLabels.push({
-      station,
-      box: getLabelBox(coord, bestPos, bestPos.anchor, station)
-    })
   }
   
-  return result
+  // === 步骤2：两趟择优 - 正向和反向各计算一次 ===
+  const forwardResult = computeLabelPositionsForPath(path, false)
+  const reversedPath = [...path].reverse()
+  const reverseResult = computeLabelPositionsForPath(reversedPath, true)
+  
+  // === 步骤3：比较最低分，选择更优的结果 ===
+  const useForward = forwardResult.lowestScore >= reverseResult.lowestScore
+  const finalResult = useForward ? forwardResult : reverseResult
+  
+  // === 输出调试信息 ===
+  if (!debugStationInPath && finalResult.lowestStationInfo) {
+    const direction = useForward ? '正向' : '反向'
+    console.log(`[两趟择优] 选择${direction}结果 | 正向最低分: ${forwardResult.lowestScore.toFixed(0)} | 反向最低分: ${reverseResult.lowestScore.toFixed(0)}`)
+    console.log(`[最低分站点] 站点：${finalResult.lowestStationInfo.station} | 上一站：${finalResult.lowestStationInfo.prevStation} | 下一站：${finalResult.lowestStationInfo.nextStation}`)
+    for (const line of finalResult.lowestStationInfo.directions) {
+      console.log(line)
+    }
+    console.log(`>>> 最终选择: ${finalResult.lowestStationInfo.bestDir} (${finalResult.lowestScore.toFixed(0)})`)
+  }
+  
+  return finalResult.result
 })
 
 // 获取站点标签偏移的辅助函数
