@@ -91,10 +91,19 @@
               :cy="getStationCoord(station)?.y"
               :r="isEndpoint(station) ? 10 : 6"
               :fill="isEndpoint(station) ? (station === startStation ? '#22C55E' : '#EF4444') : 'white'"
-              stroke="#333"
-              stroke-width="2.5"
+              :stroke="isEndpoint(station) ? '#333' : (pathStationInfo[station]?.isTransfer ? '#666' : (pathStationInfo[station]?.lineColor || '#333'))"
+              stroke-width="3"
               class="station-dot"
               :class="{ 'station-endpoint': isEndpoint(station) }"
+            />
+            <!-- Transfer station inner dot -->
+            <circle
+              v-if="!isEndpoint(station) && pathStationInfo[station]?.isTransfer"
+              :cx="getStationCoord(station)?.x"
+              :cy="getStationCoord(station)?.y"
+              r="2"
+              fill="#666"
+              pointer-events="none"
             />
             <!-- Station label with smart positioning -->
             <text
@@ -231,6 +240,10 @@
         <span class="w-3 h-3 rounded-full border-2 border-gray-400 bg-white"></span>
         <span>途经站点</span>
       </div>
+      <div v-if="mode === 'answer'" class="flex items-center gap-1">
+        <span class="transfer-station-legend"></span>
+        <span>换乘站</span>
+      </div>
     </div>
   </div>
 </template>
@@ -254,10 +267,15 @@ const props = defineProps({
     type: String,
     default: ''
   },
-  // Array of station names for the path (in order)
+  // Array of station names for the path (in order) - legacy prop, use pathData instead
   path: {
     type: Array,
     default: () => []
+  },
+  // Structured path data from backend: {stations, lines, transfers, annotated}
+  pathData: {
+    type: Object,
+    default: () => null
   },
   // Line colors for path segments (optional)
   lineInfo: {
@@ -329,79 +347,97 @@ const gridLinesY = computed(() => {
 
 // Path stations (filtered to only include valid stations with coordinates)
 const pathStations = computed(() => {
+  // Prefer structured pathData from backend
+  if (props.pathData && props.pathData.stations) {
+    return props.pathData.stations.filter(station => coordinates.value[station])
+  }
+  // Fallback to path array prop
   return props.path.filter(station => coordinates.value[station])
 })
 
-// Path segments with colors
+// Helper function to get line color by name
+const getLineColor = (lineName) => {
+  if (!lineName) return '#3B82F6'
+  const lineData = linesData.value[lineName]
+  return lineData?.color || '#3B82F6'
+}
+
+// Path segments with colors - use backend data when available
 const pathSegments = computed(() => {
   const segments = []
   const path = pathStations.value
   
+  // If we have structured data from backend, use it directly
+  if (props.pathData && props.pathData.lines && props.pathData.lines.length === path.length) {
+    const lines = props.pathData.lines
+    for (let i = 0; i < path.length - 1; i++) {
+      const from = path[i]
+      const to = path[i + 1]
+      // lines[i+1] represents "which line to take to reach station i+1"
+      // So for segment from i to i+1, use lines[i+1]
+      const lineName = lines[i + 1] || lines[i] || ''
+      const color = getLineColor(lineName)
+      segments.push({ from, to, color, lineName })
+    }
+    return segments
+  }
+  
+  // Fallback: compute segments locally (for legacy compatibility)
   for (let i = 0; i < path.length - 1; i++) {
     const from = path[i]
     const to = path[i + 1]
     
-    // Try to find the line color for this segment
     let color = '#3B82F6' // Default blue
+    let lineName = ''
     
-    // Find all lines that connect these two stations
-    const candidateLines = []
-    for (const [lineName, lineData] of Object.entries(linesData.value)) {
+    // Find the line that connects these two stations
+    for (const [lineNameKey, lineData] of Object.entries(linesData.value)) {
       const stations = lineData.stations || []
       const fromIdx = stations.indexOf(from)
       const toIdx = stations.indexOf(to)
       if (fromIdx !== -1 && toIdx !== -1 && Math.abs(fromIdx - toIdx) === 1) {
-        candidateLines.push({ lineName, lineData, stations, fromIdx, toIdx })
+        color = lineData.color || color
+        lineName = lineNameKey
+        break
       }
     }
     
-    if (candidateLines.length === 1) {
-      // Only one line connects these stations, use it
-      color = candidateLines[0].lineData.color || color
-    } else if (candidateLines.length > 1) {
-      // Multiple lines connect these stations (transfer stations)
-      // Use context from adjacent stations to determine the correct line
-      
-      // Check the previous station (if exists) to see which line we came from
-      const prevStation = i > 0 ? path[i - 1] : null
-      // Check the next station (if exists) to see which line we're going to
-      const nextStation = i < path.length - 2 ? path[i + 2] : null
-      
-      let bestLine = candidateLines[0]
-      
-      for (const candidate of candidateLines) {
-        const { stations } = candidate
-        
-        // If the previous station is also on this line, this is likely the correct line
-        if (prevStation && stations.includes(prevStation)) {
-          const prevIdx = stations.indexOf(prevStation)
-          const fromIdx = stations.indexOf(from)
-          // Check if prevStation is adjacent to from on this line
-          if (Math.abs(prevIdx - fromIdx) === 1) {
-            bestLine = candidate
-            break
-          }
-        }
-        
-        // If the next station is also on this line, this is likely the correct line
-        if (nextStation && stations.includes(nextStation)) {
-          const toIdx = stations.indexOf(to)
-          const nextIdx = stations.indexOf(nextStation)
-          // Check if nextStation is adjacent to 'to' on this line
-          if (Math.abs(toIdx - nextIdx) === 1) {
-            bestLine = candidate
-            break
-          }
-        }
-      }
-      
-      color = bestLine.lineData.color || color
-    }
-    
-    segments.push({ from, to, color })
+    segments.push({ from, to, color, lineName })
   }
   
   return segments
+})
+
+// Compute station info for path display (transfer status and line color)
+const pathStationInfo = computed(() => {
+  const path = pathStations.value
+  const segments = pathSegments.value
+  const result = {}
+  
+  // Get transfer indices from backend data
+  const transferIndices = new Set(props.pathData?.transfers || [])
+  
+  for (let i = 0; i < path.length; i++) {
+    const station = path[i]
+    
+    // Skip endpoints - they have their own styling
+    if (station === props.startStation || station === props.endStation) {
+      result[station] = { isTransfer: false, lineColor: '#333' }
+      continue
+    }
+    
+    // Use backend transfer data if available
+    const isTransfer = transferIndices.has(i)
+    
+    // Get line color from segment
+    const prevSegment = i > 0 ? segments[i - 1] : null
+    const nextSegment = i < path.length - 1 ? segments[i] : null
+    const lineColor = nextSegment?.color || prevSegment?.color || '#333'
+    
+    result[station] = { isTransfer, lineColor }
+  }
+  
+  return result
 })
 
 // Generate smooth path using Catmull-Rom spline converted to cubic Bezier
@@ -1366,5 +1402,27 @@ onMounted(async () => {
   to {
     stroke-dashoffset: 0;
   }
+}
+
+/* Transfer station legend style */
+.transfer-station-legend {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  border: 2.4px solid #666;
+  background-color: white;
+  position: relative;
+}
+
+.transfer-station-legend::after {
+  content: '';
+  position: absolute;
+  width: 3.2px;
+  height: 3.2px;
+  border-radius: 50%;
+  background-color: #666;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
 }
 </style>

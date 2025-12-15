@@ -45,6 +45,12 @@ isPlaying: (state) => state.gameStatus === 'playing' || state.gameStatus === 're
     },
     // Get station to lines mapping (only for selected lines)
     stationLinesMap: (state) => {
+      // Helper function to extract line number for sorting
+      const getLineNumber = (lineName) => {
+        const match = lineName.match(/(\d+)/)
+        return match ? parseInt(match[1], 10) : Infinity
+      }
+      
       const map = {}
       for (const lineName of state.selectedLines) {
         const lineData = state.linesData[lineName]
@@ -59,6 +65,10 @@ isPlaying: (state) => state.gameStatus === 'playing' || state.gameStatus === 're
             })
           }
         }
+      }
+      // Sort lines by line number for each station
+      for (const station in map) {
+        map[station].sort((a, b) => getLineNumber(a.name) - getLineNumber(b.name))
       }
       return map
     },

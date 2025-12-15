@@ -256,6 +256,12 @@ const selectedLinesData = computed(() => {
   return result
 })
 
+// Helper function to extract line number for sorting
+const getLineNumber = (lineName) => {
+  const match = lineName.match(/(\d+)/)
+  return match ? parseInt(match[1], 10) : Infinity
+}
+
 // Get station to lines mapping for selected lines only
 const stationToLinesMap = computed(() => {
   const map = {}
@@ -273,6 +279,11 @@ const stationToLinesMap = computed(() => {
         color: lineInfo.color || '#6B7280'
       })
     }
+  }
+  
+  // Sort lines by line number for each station
+  for (const stationName in map) {
+    map[stationName].sort((a, b) => getLineNumber(a.name) - getLineNumber(b.name))
   }
   
   return map

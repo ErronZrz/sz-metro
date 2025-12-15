@@ -243,3 +243,47 @@ class MetroNetwork:
             prev_line = current_line
         
         return " → ".join(annotated)
+    
+    def build_structured_path(self, path: List[str], line_sequence: List[str]) -> dict:
+        """
+        Build structured path data for frontend visualization.
+        
+        Args:
+            path: List of station names
+            line_sequence: Pre-computed optimal line sequence from PathFinder
+        
+        Returns:
+            Dictionary with:
+            - annotated: Annotated path string (for text display)
+            - stations: List of station names
+            - lines: List of line names (one per station)
+            - transfers: List of station indices where transfer happens
+            - colors: List of line colors (one per station)
+        """
+        annotated = self.annotate_path_with_transfers(path, line_sequence)
+        
+        # Calculate transfer indices (where line changes)
+        transfers = []
+        for i in range(1, len(line_sequence)):
+            prev_line = line_sequence[i - 1]
+            curr_line = line_sequence[i]
+            if prev_line and curr_line and prev_line != curr_line:
+                # Transfer happens at station i-1 (the station before line change)
+                transfers.append(i - 1)
+        
+        # Get colors for each station's line
+        colors = []
+        for line_name in line_sequence:
+            if line_name and line_name in self.lines:
+                # Try to get color from lines data
+                # Color will be provided by coordinates data, use placeholder here
+                colors.append(line_name)  # Frontend will map line name to color
+            else:
+                colors.append(None)
+        
+        return {
+            "annotated": annotated,
+            "stations": path,
+            "lines": line_sequence,
+            "transfers": transfers
+        }

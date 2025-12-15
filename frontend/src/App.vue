@@ -56,7 +56,7 @@
 
       <!-- Footer -->
       <footer class="text-center mt-8 text-white/60">
-        <p>深圳地铁寻路挑战 v1.2 | 使用 Vue 3 + FastAPI 构建</p>
+        <p>深圳地铁寻路挑战 v1.3 | 使用 Vue 3 + FastAPI 构建</p>
       </footer>
     </div>
   </div>

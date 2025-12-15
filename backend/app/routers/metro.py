@@ -118,20 +118,25 @@ async def calculate_path(request: CalculatePathRequest):
         
         # Find shortest paths
         path_finder = PathFinder(metro_network)
-        paths, cost = path_finder.find_all_shortest_paths(request.start, request.end)
+        paths, cost, paths_with_lines = path_finder.find_all_shortest_paths(request.start, request.end)
         
         if not paths:
             raise HTTPException(status_code=400, detail="No path found")
         
-        # Annotate paths with optimal transfer information
-        annotated_paths = []
-        for path in paths:
-            _, line_seq = path_finder.analyze_path_optimal(path)
-            annotated_paths.append(metro_network.annotate_path_with_transfers(path, line_seq))
+        # Build structured paths with line sequences (preserves transfer variants)
+        # Use a set to deduplicate identical annotated paths
+        seen_annotated = set()
+        structured_paths = []
+        for path, line_seq in paths_with_lines:
+            structured = metro_network.build_structured_path(path, line_seq)
+            # Use annotated string for deduplication
+            if structured["annotated"] not in seen_annotated:
+                seen_annotated.add(structured["annotated"])
+                structured_paths.append(structured)
         
         return PathResponse(
             shortest_cost=float(cost),
-            paths=annotated_paths
+            paths=structured_paths
         )
     except HTTPException:
         raise
@@ -153,7 +158,7 @@ async def validate_path(request: ValidatePathRequest):
         
         # Get shortest paths for comparison
         path_finder = PathFinder(metro_network)
-        shortest_paths, shortest_cost = path_finder.find_all_shortest_paths(request.start, request.end)
+        shortest_paths, shortest_cost, paths_with_lines = path_finder.find_all_shortest_paths(request.start, request.end)
         
         if not is_valid:
             # Provide detailed error reason
@@ -186,14 +191,19 @@ async def validate_path(request: ValidatePathRequest):
         
         is_shortest = (user_cost == shortest_cost)
         
-        # Annotate shortest paths with transfer information
-        annotated_paths = []
-        for path in shortest_paths:
-            _, line_seq = path_finder.analyze_path_optimal(path)
-            annotated_paths.append(metro_network.annotate_path_with_transfers(path, line_seq))
+        # Build structured shortest paths with line sequences (preserves transfer variants)
+        # Use a set to deduplicate identical annotated paths
+        seen_annotated = set()
+        structured_paths = []
+        for path, line_seq in paths_with_lines:
+            structured = metro_network.build_structured_path(path, line_seq)
+            if structured["annotated"] not in seen_annotated:
+                seen_annotated.add(structured["annotated"])
+                structured_paths.append(structured)
         
-        # Annotate user path with optimal line sequence (reusing computed result)
-        user_path_annotated = metro_network.annotate_path_with_transfers(request.user_path, user_line_sequence)
+        # Build structured user path with optimal line sequence
+        user_path_structured = metro_network.build_structured_path(request.user_path, user_line_sequence)
+        user_path_annotated = user_path_structured["annotated"]
         
         if is_shortest:
             message = "恭喜！这是最短路径之一！"
@@ -210,7 +220,7 @@ async def validate_path(request: ValidatePathRequest):
             message=message,
             error_reason=error_reason,
             user_path_annotated=user_path_annotated,
-            all_shortest_paths=annotated_paths
+            all_shortest_paths=structured_paths
         )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))

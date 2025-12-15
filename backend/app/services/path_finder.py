@@ -78,20 +78,27 @@ class PathFinder:
         if best_cost == Decimal("Infinity"):
             return [], best_cost
         
-        # Backtrack all shortest paths
-        all_paths = []
+        # Backtrack all shortest paths with line sequences
+        all_paths_with_lines = []
         
-        def backtrack(node, line, acc):
+        def backtrack(node, line, acc_nodes, acc_lines):
             if node == start:
-                all_paths.append(list(reversed(acc + [node])))
+                # Reverse to get correct order (start to end)
+                path = list(reversed(acc_nodes + [node]))
+                # Line sequence: first station has None, then lines used for each segment
+                line_seq = list(reversed(acc_lines + [None]))
+                all_paths_with_lines.append((path, line_seq))
                 return
             for pnode, pline in parents[(node, line)]:
-                backtrack(pnode, pline, acc + [node])
+                backtrack(pnode, pline, acc_nodes + [node], acc_lines + [line])
         
         for node, line in best_states:
-            backtrack(node, line, [])
+            backtrack(node, line, [], [])
         
-        return all_paths, best_cost
+        # Extract just the paths for backward compatibility
+        all_paths = [path for path, _ in all_paths_with_lines]
+        
+        return all_paths, best_cost, all_paths_with_lines
     
     def analyze_path_optimal(self, path: List[str]) -> Tuple[Decimal, List[str]]:
         """

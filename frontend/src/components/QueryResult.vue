@@ -7,13 +7,14 @@
         :startStation="gameStore.startStation"
         :endStation="gameStore.endStation"
         :path="mapPath"
+        :pathData="firstPathData"
       />
     </div>
 
     <!-- All Shortest Paths -->
     <div v-if="gameStore.systemPaths.length > 0" class="p-4 bg-blue-50 rounded-lg border-2 border-blue-300">
       <h4 class="font-semibold text-blue-700 mb-3">
-        ✅ 所有最短路径 (共 {{ gameStore.systemPaths.length }} 条):
+        ✅ 所有最短路径 (共 {{ gameStore.systemPaths.length }} 条，乘坐 {{ stationCount }} 站):
       </h4>
       <div class="space-y-2">
         <div
@@ -31,7 +32,7 @@
     <div class="text-center">
       <button
         @click="handleReset"
-        class="px-8 py-3 bg-metro-primary text-white rounded-lg hover:bg-blue-700 transition font-medium"
+        class="px-8 py-3 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition font-medium"
       >
         🎮 重新选站
       </button>
@@ -46,19 +47,33 @@ import MetroMap from './MetroMap.vue'
 
 const gameStore = useGameStore()
 
-// Map path: use the first system path for visualization
-const mapPath = computed(() => {
+// First path data (structured format from backend)
+const firstPathData = computed(() => {
   if (gameStore.systemPaths.length > 0) {
-    const firstPath = gameStore.systemPaths[0]
-    if (typeof firstPath === 'string') {
-      // String format: "站A → 站B(换乘X号线) → 站C"
-      return firstPath.split(' → ').map(s => s.replace(/\([^)]*\)/g, '').trim())
-    } else if (Array.isArray(firstPath)) {
-      // Array format: [{station: '站A'}, {station: '站B', transfer: 'X号线'}]
-      return firstPath.map(item => typeof item === 'object' ? item.station : item)
-    }
+    return gameStore.systemPaths[0]
+  }
+  return null
+})
+
+// Map path: use the first system path's stations for visualization
+const mapPath = computed(() => {
+  const pathData = firstPathData.value
+  if (!pathData) return []
+  
+  // New structured format: {annotated, stations, lines, transfers}
+  if (pathData.stations) {
+    return pathData.stations
+  }
+  // Legacy string format: "站A → 站B(换乘X号线) → 站C"
+  if (typeof pathData === 'string') {
+    return pathData.split(' → ').map(s => s.replace(/\([^)]*\)/g, '').trim())
   }
   return []
+})
+
+// Station count: number of stations in the first path minus 1
+const stationCount = computed(() => {
+  return mapPath.value.length > 0 ? mapPath.value.length - 1 : 0
 })
 
 const handleReset = () => {
@@ -67,24 +82,15 @@ const handleReset = () => {
 
 // Format path with transfer annotations
 const formatPathWithTransfers = (pathData) => {
+  // New structured format: {annotated, stations, lines, transfers}
+  if (pathData && pathData.annotated) {
+    return pathData.annotated.replace(/\(/g, '<span class="text-orange-600 font-semibold">(')
+                              .replace(/\)/g, ')</span>')
+  }
+  // Legacy string format with transfer annotations
   if (typeof pathData === 'string') {
-    // String format with transfer annotations
     return pathData.replace(/\(/g, '<span class="text-orange-600 font-semibold">(')
                     .replace(/\)/g, ')</span>')
-  } else if (Array.isArray(pathData)) {
-    // Array format
-    if (pathData.length > 0 && typeof pathData[0] === 'object' && pathData[0].station) {
-      // Object array with transfer info
-      return pathData.map(item => {
-        if (item.transfer) {
-          return `${item.station}<span class="text-orange-600 font-semibold">(${item.transfer})</span>`
-        }
-        return item.station
-      }).join(' → ')
-    } else {
-      // Simple station array
-      return pathData.join(' → ')
-    }
   }
   return String(pathData)
 }

@@ -7,13 +7,14 @@
         :startStation="gameStore.startStation"
         :endStation="gameStore.endStation"
         :path="mapPath"
+        :pathData="firstPathData"
       />
     </div>
 
     <!-- All Shortest Paths (查看答案后显示，紧跟在地图下方) -->
     <div v-if="gameStore.showAnswer && gameStore.systemPaths.length > 0" class="p-4 bg-blue-50 rounded-lg border-2 border-blue-300">
       <h4 class="font-semibold text-blue-700 mb-3">
-        ✅ 所有最短路径 (共 {{ gameStore.systemPaths.length }} 条):
+        ✅ 所有最短路径 (共 {{ gameStore.systemPaths.length }} 条) (minCost = {{ formattedCost }}):
       </h4>
       <div class="space-y-2">
         <div
@@ -89,13 +90,6 @@
           @confirm="handleStationConfirm"
         />
       </div>
-      <button
-        @click="addStation"
-        :disabled="!currentStation"
-        class="px-6 py-2 bg-metro-primary text-white rounded-lg hover:bg-blue-700 transition disabled:bg-gray-300 disabled:cursor-not-allowed"
-      >
-        添加
-      </button>
       <button
         @click="gameStore.clearPath"
         class="px-6 py-2 bg-gray-300 text-gray-700 rounded-lg hover:bg-gray-400 transition"
@@ -235,20 +229,35 @@ import MetroMap from './MetroMap.vue'
 
 const gameStore = useGameStore()
 
+// First path data (structured format from backend)
+const firstPathData = computed(() => {
+  if (gameStore.showAnswer && gameStore.systemPaths.length > 0) {
+    return gameStore.systemPaths[0]
+  }
+  return null
+})
+
 // Map path: when answer is shown, use the first system path; otherwise empty
 const mapPath = computed(() => {
-  if (gameStore.showAnswer && gameStore.systemPaths.length > 0) {
-    // Extract station names from the first system path
-    const firstPath = gameStore.systemPaths[0]
-    if (typeof firstPath === 'string') {
-      // String format: "站A → 站B(换乘X号线) → 站C"
-      return firstPath.split(' → ').map(s => s.replace(/\([^)]*\)/g, '').trim())
-    } else if (Array.isArray(firstPath)) {
-      // Array format: [{station: '站A'}, {station: '站B', transfer: 'X号线'}]
-      return firstPath.map(item => typeof item === 'object' ? item.station : item)
-    }
+  const pathData = firstPathData.value
+  if (!pathData) return []
+  
+  // New structured format: {annotated, stations, lines, transfers}
+  if (pathData.stations) {
+    return pathData.stations
+  }
+  // Legacy string format: "站A → 站B(换乘X号线) → 站C"
+  if (typeof pathData === 'string') {
+    return pathData.split(' → ').map(s => s.replace(/\([^)]*\)/g, '').trim())
   }
   return []
+})
+
+// Format cost: integer without decimal point, float with decimal point
+const formattedCost = computed(() => {
+  const cost = gameStore.shortestCost
+  if (cost === null || cost === undefined) return ''
+  return Number.isInteger(cost) ? cost.toString() : cost.toString()
 })
 
 const currentStation = ref('')
@@ -384,24 +393,15 @@ const handleShowAnswer = async () => {
 
 // 格式化路径，标注换乘站
 const formatPathWithTransfers = (pathData) => {
+  // New structured format: {annotated, stations, lines, transfers}
+  if (pathData && pathData.annotated) {
+    return pathData.annotated.replace(/\(/g, '<span class="text-orange-600 font-semibold">(')
+                              .replace(/\)/g, ')</span>')
+  }
+  // Legacy string format (带换乘标注)
   if (typeof pathData === 'string') {
-    // 如果是字符串格式（带换乘标注）
     return pathData.replace(/\(/g, '<span class="text-orange-600 font-semibold">(')
                     .replace(/\)/g, ')</span>')
-  } else if (Array.isArray(pathData)) {
-    // 如果是数组格式
-    if (pathData.length > 0 && typeof pathData[0] === 'object' && pathData[0].station) {
-      // 带换乘信息的对象数组
-      return pathData.map(item => {
-        if (item.transfer) {
-          return `${item.station}<span class="text-orange-600 font-semibold">(${item.transfer})</span>`
-        }
-        return item.station
-      }).join(' → ')
-    } else {
-      // 普通站点数组
-      return pathData.join(' → ')
-    }
   }
   return String(pathData)
 }
