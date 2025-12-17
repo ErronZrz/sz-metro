@@ -216,6 +216,7 @@ const selectedLinesData = computed(() => {
     
     const color = lineInfo.color || '#6B7280'
     const stations = lineInfo.stations
+    const isLoop = lineInfo.is_loop || false  // Support loop lines
     const segments = []
     
     // Create smooth path segments for each pair of adjacent stations
@@ -227,8 +228,8 @@ const selectedLinesData = computed(() => {
       
       // Get coordinates for smooth curve calculation
       const points = []
-      const prevCoord = i > 0 ? getStationCoord(stations[i - 1]) : null
-      const nextNextCoord = i < stations.length - 2 ? getStationCoord(stations[i + 2]) : null
+      const prevCoord = i > 0 ? getStationCoord(stations[i - 1]) : (isLoop ? getStationCoord(stations[stations.length - 1]) : null)
+      const nextNextCoord = i < stations.length - 2 ? getStationCoord(stations[i + 2]) : (isLoop ? getStationCoord(stations[0]) : null)
       
       const p0 = prevCoord || fromCoord
       const p1 = fromCoord
@@ -244,6 +245,32 @@ const selectedLinesData = computed(() => {
       
       const pathData = `M ${p1.x} ${p1.y} C ${cp1x} ${cp1y}, ${cp2x} ${cp2y}, ${p2.x} ${p2.y}`
       segments.push({ path: pathData })
+    }
+    
+    // For loop lines, connect last station to first station
+    if (isLoop && stations.length >= 2) {
+      const fromCoord = getStationCoord(stations[stations.length - 1])
+      const toCoord = getStationCoord(stations[0])
+      
+      if (fromCoord && toCoord) {
+        // Get surrounding points for smooth curve
+        const prevCoord = getStationCoord(stations[stations.length - 2])
+        const nextNextCoord = getStationCoord(stations[1])
+        
+        const p0 = prevCoord || fromCoord
+        const p1 = fromCoord
+        const p2 = toCoord
+        const p3 = nextNextCoord || toCoord
+        
+        const tension = 0.5
+        const cp1x = p1.x + (p2.x - p0.x) * tension / 3
+        const cp1y = p1.y + (p2.y - p0.y) * tension / 3
+        const cp2x = p2.x - (p3.x - p1.x) * tension / 3
+        const cp2y = p2.y - (p3.y - p1.y) * tension / 3
+        
+        const pathData = `M ${p1.x} ${p1.y} C ${cp1x} ${cp1y}, ${cp2x} ${cp2y}, ${p2.x} ${p2.y}`
+        segments.push({ path: pathData })
+      }
     }
     
     result.push({

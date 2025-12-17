@@ -393,9 +393,17 @@ const pathSegments = computed(() => {
     // Find the line that connects these two stations
     for (const [lineNameKey, lineData] of Object.entries(linesData.value)) {
       const stations = lineData.stations || []
+      const isLoop = lineData.is_loop || false  // Support loop lines
       const fromIdx = stations.indexOf(from)
       const toIdx = stations.indexOf(to)
-      if (fromIdx !== -1 && toIdx !== -1 && Math.abs(fromIdx - toIdx) === 1) {
+      
+      if (fromIdx === -1 || toIdx === -1) continue
+      
+      const diff = Math.abs(fromIdx - toIdx)
+      // Check adjacent: diff == 1 OR (loop line and diff == len - 1)
+      const isAdjacent = diff === 1 || (isLoop && diff === stations.length - 1)
+      
+      if (isAdjacent) {
         color = lineData.color || color
         lineName = lineNameKey
         break

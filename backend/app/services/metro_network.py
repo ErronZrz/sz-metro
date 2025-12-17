@@ -3,7 +3,7 @@ import json
 import random
 from collections import defaultdict
 from decimal import Decimal, getcontext
-from typing import Dict, List, Set, Tuple
+from typing import Dict, List, Set, Tuple, Union
 import os
 
 # Set Decimal precision
@@ -16,21 +16,71 @@ class MetroNetwork:
     def __init__(self, json_file: str = None):
         """Initialize metro network"""
         if json_file is None:
-            # Default to lines.json in backend directory
-            json_file = os.path.join(os.path.dirname(__file__), "..", "..", "lines.json")
+            # Default to stations_coordinates.json in backend directory
+            json_file = os.path.join(os.path.dirname(__file__), "..", "..", "stations_coordinates.json")
         self.lines = self._load_lines(json_file)
         self.graph = None
         self.station_lines = None
         self.transfer_penalty = Decimal("2.5")
     
-    def _load_lines(self, json_file: str) -> Dict[str, List[str]]:
-        """Load line data from JSON file"""
+    def _load_lines(self, json_file: str) -> Dict[str, Union[List[str], dict]]:
+        """Load line data from JSON file (stations_coordinates.json)"""
         try:
             with open(json_file, "r", encoding="utf-8") as f:
-                return json.load(f)
+                data = json.load(f)
+                # Extract the "lines" field from stations_coordinates.json
+                # Format: {"lines": {"1号线": {"color": "#...", "stations": [...], "is_loop": false}, ...}}
+                if "lines" in data:
+                    return data["lines"]
+                # Fallback: if it's the old lines.json format (direct line mapping)
+                return data
         except Exception as e:
-            raise RuntimeError(f"Cannot read lines.json: {e}")
+            raise RuntimeError(f"Cannot read stations_coordinates.json: {e}")
     
+    def _get_line_stations(self, line_name: str) -> List[str]:
+        """
+        Get stations list for a line (supports both old and new format).
+        Old format: {"1号线": ["站A", "站B", ...]}
+        New format: {"1号线": {"stations": ["站A", "站B", ...], "is_loop": true}}
+        """
+        line_data = self.lines[line_name]
+        if isinstance(line_data, dict):
+            return line_data.get("stations", [])
+        return line_data
+    
+    def _is_loop_line(self, line_name: str) -> bool:
+        """
+        Check if a line is a loop line.
+        Returns False if is_loop is not specified (backward compatible).
+        """
+        line_data = self.lines[line_name]
+        if isinstance(line_data, dict):
+            return line_data.get("is_loop", False)
+        return False
+    
+    def _are_adjacent_on_line(self, station_a: str, station_b: str, line_name: str) -> bool:
+        """
+        Check if two stations are adjacent on a given line (supports loop lines).
+        """
+        stations = self._get_line_stations(line_name)
+        try:
+            idx_a = stations.index(station_a)
+            idx_b = stations.index(station_b)
+        except ValueError:
+            return False
+        
+        diff = abs(idx_a - idx_b)
+        
+        # Normal adjacent check
+        if diff == 1:
+            return True
+        
+        # For loop lines, first and last stations are also adjacent
+        if self._is_loop_line(line_name) and diff == len(stations) - 1:
+            return True
+        
+        return False
+
     def build_graph(self, selected_line_names: List[str]) -> None:
         """Build graph structure and station-line mapping"""
         if not self._validate_lines(selected_line_names):
@@ -40,13 +90,21 @@ class MetroNetwork:
         self.station_lines = defaultdict(set)
         
         for line_name in selected_line_names:
-            stations = self.lines[line_name]
+            stations = self._get_line_stations(line_name)
+            is_loop = self._is_loop_line(line_name)
+            
             for s in stations:
                 self.station_lines[s].add(line_name)
             
+            # Connect adjacent stations
             for a, b in zip(stations, stations[1:]):
                 self.graph[a].add(b)
                 self.graph[b].add(a)
+            
+            # For loop lines, connect last station to first station
+            if is_loop and len(stations) >= 2:
+                self.graph[stations[-1]].add(stations[0])
+                self.graph[stations[0]].add(stations[-1])
     
     def _validate_lines(self, user_lines: List[str]) -> bool:
         """Validate if line names exist"""
@@ -69,7 +127,7 @@ class MetroNetwork:
         """Get all stations for a specific line"""
         if line_name not in self.lines:
             raise ValueError(f"Line {line_name} not found")
-        return self.lines[line_name]
+        return self._get_line_stations(line_name)
     
     def is_reachable(self, start: str, end: str) -> bool:
         """Check if two stations are reachable"""
@@ -215,15 +273,9 @@ class MetroNetwork:
                 # Filter to only lines where stations are adjacent
                 valid_lines = []
                 for line_name in common_lines:
-                    line_stations = self.lines[line_name]
-                    try:
-                        u_idx = line_stations.index(prev_station)
-                        v_idx = line_stations.index(station)
-                        # Check if stations are adjacent on this line
-                        if abs(u_idx - v_idx) == 1:
-                            valid_lines.append(line_name)
-                    except ValueError:
-                        continue
+                    # Use the new adjacency method that supports loop lines
+                    if self._are_adjacent_on_line(prev_station, station, line_name):
+                        valid_lines.append(line_name)
                 
                 if not valid_lines:
                     current_line = None

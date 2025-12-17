@@ -247,9 +247,19 @@ async def get_map_coordinates():
     """Get station coordinates and line information for map visualization"""
     try:
         data = get_station_coordinates_data()
+        lines_data = data.get("lines", {})
+        
+        # Ensure each line has is_loop field (default to False for backward compatibility)
+        merged_lines = {}
+        for line_name, line_info in lines_data.items():
+            merged_lines[line_name] = dict(line_info) if isinstance(line_info, dict) else {}
+            # Set is_loop to False if not present (backward compatible)
+            if "is_loop" not in merged_lines[line_name]:
+                merged_lines[line_name]["is_loop"] = False
+        
         return {
             "stations": data.get("stations", {}),
-            "lines": data.get("lines", {})
+            "lines": merged_lines
         }
     except FileNotFoundError:
         raise HTTPException(status_code=500, detail="Station coordinates data not found")

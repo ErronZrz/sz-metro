@@ -36,19 +36,11 @@ class PathFinder:
                 # Find lines where u and v are both present
                 common_lines = self.network.station_lines[u] & self.network.station_lines[v]
                 
-                # Filter to only lines where u and v are adjacent
+                # Filter to only lines where u and v are adjacent (supports loop lines)
                 valid_lines = []
                 for line_name in common_lines:
-                    line_stations = self.network.lines[line_name]
-                    try:
-                        u_idx = line_stations.index(u)
-                        v_idx = line_stations.index(v)
-                        # Check if stations are adjacent on this line
-                        if abs(u_idx - v_idx) == 1:
-                            valid_lines.append(line_name)
-                    except ValueError:
-                        # Station not found in line (shouldn't happen)
-                        continue
+                    if self.network._are_adjacent_on_line(u, v, line_name):
+                        valid_lines.append(line_name)
                 
                 # Only process valid adjacent connections
                 for line in valid_lines:
@@ -128,17 +120,11 @@ class PathFinder:
             u, v = path[i], path[i + 1]
             common_lines = self.network.station_lines[u] & self.network.station_lines[v]
             
-            # Find valid lines where u and v are adjacent
+            # Find valid lines where u and v are adjacent (supports loop lines)
             valid_lines = []
             for line_name in common_lines:
-                line_stations = self.network.lines[line_name]
-                try:
-                    u_idx = line_stations.index(u)
-                    v_idx = line_stations.index(v)
-                    if abs(u_idx - v_idx) == 1:
-                        valid_lines.append(line_name)
-                except ValueError:
-                    continue
+                if self.network._are_adjacent_on_line(u, v, line_name):
+                    valid_lines.append(line_name)
             
             if not valid_lines:
                 # Invalid path

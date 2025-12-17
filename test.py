@@ -14,7 +14,7 @@ getcontext().prec = 28
 class MetroNetwork:
     """深圳地铁网络类，封装地铁线路数据和相关操作"""
     
-    def __init__(self, json_file="lines.json"):
+    def __init__(self, json_file="backend/stations_coordinates.json"):
         """初始化地铁网络，加载线路数据"""
         self.lines = self._load_lines(json_file)
         self.graph = None
@@ -25,9 +25,13 @@ class MetroNetwork:
         """加载线路数据"""
         try:
             with open(json_file, "r", encoding="utf-8") as f:
-                return json.load(f)
+                data = json.load(f)
+                # Extract lines from stations_coordinates.json format
+                if "lines" in data:
+                    return data["lines"]
+                return data
         except Exception:
-            print("无法读取 lines.json 文件，请确认文件存在且格式正确。")
+            print("无法读取 stations_coordinates.json 文件，请确认文件存在且格式正确。")
             sys.exit(1)
     
     def build_graph(self, selected_line_names: List[str]) -> None:
@@ -39,7 +43,9 @@ class MetroNetwork:
         self.station_lines = defaultdict(set)
         
         for line_name in selected_line_names:
-            stations = self.lines[line_name]
+            line_data = self.lines[line_name]
+            # Support both formats: list or dict with stations key
+            stations = line_data.get("stations", line_data) if isinstance(line_data, dict) else line_data
             for s in stations:
                 self.station_lines[s].add(line_name)
             
