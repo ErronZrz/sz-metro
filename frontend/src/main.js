@@ -18,6 +18,11 @@ const router = createRouter({
       component: App,
       props: { city: 'sh' }
     },
+    {
+      path: '/cs',
+      component: App,
+      props: { city: 'cs' }
+    },
     // Redirect /sz to / for consistency
     {
       path: '/sz',

@@ -4,8 +4,8 @@ from app.routers import metro
 
 app = FastAPI(
     title="地铁寻路游戏 API",
-    description="地铁最短路径查找和验证 API（支持深圳、上海）",
-    version="1.1.0"
+    description="地铁最短路径查找和验证 API（支持深圳、上海、长沙）",
+    version="1.2.0"
 )
 
 # Configure CORS
@@ -25,6 +25,6 @@ async def root():
     return {
         "message": "地铁寻路游戏 API",
         "docs": "/docs",
-        "version": "1.1.0",
-        "supported_cities": ["sz", "sh"]
+        "version": "1.2.0",
+        "supported_cities": ["sz", "sh", "cs"]
     }
