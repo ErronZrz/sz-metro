@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Path
 from typing import List
 import json
 import os
@@ -19,34 +19,86 @@ from app.services.path_validator import PathValidator
 
 router = APIRouter()
 
-# Initialize metro network (singleton pattern)
-metro_network = MetroNetwork()
+# City data file mapping
+CITY_DATA_FILES = {
+    "sz": "stations_coordinates.json",      # Shenzhen
+    "sh": "stations_coordinates_sh.json",   # Shanghai
+}
+
+CITY_NAMES = {
+    "sz": "深圳",
+    "sh": "上海",
+}
+
+# Cache for metro networks (one per city)
+_metro_networks = {}
+_station_coordinates_cache = {}
 
 
-@router.get("/lines", response_model=List[str])
-async def get_lines():
-    """Get all available metro lines"""
+def get_metro_network(city: str) -> MetroNetwork:
+    """Get or create MetroNetwork instance for a city"""
+    if city not in CITY_DATA_FILES:
+        raise HTTPException(status_code=404, detail=f"City not supported: {city}")
+    
+    if city not in _metro_networks:
+        base_dir = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
+        json_file = os.path.join(base_dir, CITY_DATA_FILES[city])
+        _metro_networks[city] = MetroNetwork(json_file)
+    
+    return _metro_networks[city]
+
+
+def get_station_coordinates_data(city: str):
+    """Load station coordinates from JSON file for a city"""
+    if city not in CITY_DATA_FILES:
+        raise HTTPException(status_code=404, detail=f"City not supported: {city}")
+    
+    if city not in _station_coordinates_cache:
+        base_dir = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
+        coords_file = os.path.join(base_dir, CITY_DATA_FILES[city])
+        with open(coords_file, 'r', encoding='utf-8') as f:
+            _station_coordinates_cache[city] = json.load(f)
+    
+    return _station_coordinates_cache[city]
+
+
+@router.get("/{city}/lines", response_model=List[str])
+async def get_lines(city: str = Path(..., description="City code: sz or sh")):
+    """Get all available metro lines for a city"""
     try:
+        metro_network = get_metro_network(city)
         return metro_network.get_all_lines()
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.get("/lines/{line_name}/stations", response_model=List[str])
-async def get_line_stations(line_name: str):
+@router.get("/{city}/lines/{line_name}/stations", response_model=List[str])
+async def get_line_stations(
+    city: str = Path(..., description="City code: sz or sh"),
+    line_name: str = Path(..., description="Line name")
+):
     """Get all stations for a specific line"""
     try:
+        metro_network = get_metro_network(city)
         return metro_network.get_line_stations(line_name)
+    except HTTPException:
+        raise
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.get("/stations", response_model=StationsResponse)
-async def get_stations(lines: str = None):
+@router.get("/{city}/stations", response_model=StationsResponse)
+async def get_stations(
+    city: str = Path(..., description="City code: sz or sh"),
+    lines: str = None
+):
     """Get all stations, optionally filtered by lines"""
     try:
+        metro_network = get_metro_network(city)
         if lines:
             line_list = [l.strip() for l in lines.split(',')]
             metro_network.build_graph(line_list)
@@ -59,17 +111,25 @@ async def get_stations(lines: str = None):
             stations = sorted(all_stations)
         
         return StationsResponse(stations=stations)
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.post("/game/random-stations", response_model=RandomStationsResponse)
-async def random_stations(request: RandomStationsRequest):
+@router.post("/{city}/game/random-stations", response_model=RandomStationsResponse)
+async def random_stations(
+    request: RandomStationsRequest,
+    city: str = Path(..., description="City code: sz or sh")
+):
     """Generate random start and end stations"""
     try:
+        metro_network = get_metro_network(city)
         metro_network.build_graph(request.lines)
         start, end = metro_network.pick_two_random_stations()
         return RandomStationsResponse(start=start, end=end)
+    except HTTPException:
+        raise
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     except RuntimeError as e:
@@ -78,10 +138,14 @@ async def random_stations(request: RandomStationsRequest):
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.post("/game/reachable-stations", response_model=StationsResponse)
-async def reachable_stations(request: ReachableStationsRequest):
+@router.post("/{city}/game/reachable-stations", response_model=StationsResponse)
+async def reachable_stations(
+    request: ReachableStationsRequest,
+    city: str = Path(..., description="City code: sz or sh")
+):
     """Get all stations reachable from start station within selected lines"""
     try:
+        metro_network = get_metro_network(city)
         metro_network.build_graph(request.lines)
         
         # Validate start station exists
@@ -99,10 +163,14 @@ async def reachable_stations(request: ReachableStationsRequest):
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.post("/game/calculate-path", response_model=PathResponse)
-async def calculate_path(request: CalculatePathRequest):
+@router.post("/{city}/game/calculate-path", response_model=PathResponse)
+async def calculate_path(
+    request: CalculatePathRequest,
+    city: str = Path(..., description="City code: sz or sh")
+):
     """Calculate shortest paths between two stations"""
     try:
+        metro_network = get_metro_network(city)
         metro_network.build_graph(request.lines)
         
         # Validate stations exist
@@ -146,10 +214,14 @@ async def calculate_path(request: CalculatePathRequest):
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.post("/game/validate-path", response_model=ValidationResponse)
-async def validate_path(request: ValidatePathRequest):
+@router.post("/{city}/game/validate-path", response_model=ValidationResponse)
+async def validate_path(
+    request: ValidatePathRequest,
+    city: str = Path(..., description="City code: sz or sh")
+):
     """Validate user's path"""
     try:
+        metro_network = get_metro_network(city)
         metro_network.build_graph(request.lines)
         
         # Validate path
@@ -222,45 +294,75 @@ async def validate_path(request: ValidatePathRequest):
             user_path_annotated=user_path_annotated,
             all_shortest_paths=structured_paths
         )
+    except HTTPException:
+        raise
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
 
-# Load station coordinates data (lazy loading)
-_station_coordinates_data = None
-
-def get_station_coordinates_data():
-    """Load station coordinates from JSON file"""
-    global _station_coordinates_data
-    if _station_coordinates_data is None:
-        base_dir = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
-        coords_file = os.path.join(base_dir, 'stations_coordinates.json')
-        with open(coords_file, 'r', encoding='utf-8') as f:
-            _station_coordinates_data = json.load(f)
-    return _station_coordinates_data
-
-
-@router.get("/map/coordinates")
-async def get_map_coordinates():
+@router.get("/{city}/map/coordinates")
+async def get_map_coordinates(city: str = Path(..., description="City code: sz or sh")):
     """Get station coordinates and line information for map visualization"""
     try:
-        data = get_station_coordinates_data()
+        data = get_station_coordinates_data(city)
         lines_data = data.get("lines", {})
         
-        # Ensure each line has is_loop field (default to False for backward compatibility)
+        # Process lines: merge branch lines (e.g., 5号线+) into main lines
         merged_lines = {}
+        branch_lines = {}  # Temporarily store branch lines
+        
         for line_name, line_info in lines_data.items():
-            merged_lines[line_name] = dict(line_info) if isinstance(line_info, dict) else {}
+            line_data = dict(line_info) if isinstance(line_info, dict) else {}
             # Set is_loop to False if not present (backward compatible)
-            if "is_loop" not in merged_lines[line_name]:
-                merged_lines[line_name]["is_loop"] = False
+            if "is_loop" not in line_data:
+                line_data["is_loop"] = False
+            
+            if line_name.endswith("+"):
+                # Store branch line for later merging
+                branch_lines[line_name] = line_data
+            else:
+                merged_lines[line_name] = line_data
+        
+        # Merge branch lines into main lines
+        for branch_name, branch_data in branch_lines.items():
+            main_name = branch_name[:-1]  # Remove "+"
+            if main_name in merged_lines:
+                # Add branch stations info to main line
+                main_line = merged_lines[main_name]
+                if "branch_stations" not in main_line:
+                    main_line["branch_stations"] = []
+                # Store branch info: stations list (the branch line's stations)
+                main_line["branch_stations"] = branch_data.get("stations", [])
+        
+        # Process stations: convert "+" line names to main line names in each station's lines array
+        stations_data = data.get("stations", {})
+        processed_stations = {}
+        for station_name, station_info in stations_data.items():
+            processed_station = dict(station_info)
+            if "lines" in processed_station:
+                # Remove "+" suffix from line names
+                processed_station["lines"] = [
+                    line[:-1] if line.endswith("+") else line
+                    for line in processed_station["lines"]
+                ]
+                # Remove duplicates while preserving order
+                seen = set()
+                unique_lines = []
+                for line in processed_station["lines"]:
+                    if line not in seen:
+                        seen.add(line)
+                        unique_lines.append(line)
+                processed_station["lines"] = unique_lines
+            processed_stations[station_name] = processed_station
         
         return {
-            "stations": data.get("stations", {}),
+            "stations": processed_stations,
             "lines": merged_lines
         }
+    except HTTPException:
+        raise
     except FileNotFoundError:
         raise HTTPException(status_code=500, detail="Station coordinates data not found")
     except Exception as e:

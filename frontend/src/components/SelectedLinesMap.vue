@@ -206,6 +206,66 @@ const getStationCoord = (stationName) => {
   return coordinates.value[stationName]
 }
 
+// Helper function to create path segments for a list of stations
+const createPathSegments = (stations, isLoop, getCoord) => {
+  const segments = []
+  
+  // Create smooth path segments for each pair of adjacent stations
+  for (let i = 0; i < stations.length - 1; i++) {
+    const fromCoord = getCoord(stations[i])
+    const toCoord = getCoord(stations[i + 1])
+    
+    if (!fromCoord || !toCoord) continue
+    
+    // Get coordinates for smooth curve calculation
+    const prevCoord = i > 0 ? getCoord(stations[i - 1]) : (isLoop ? getCoord(stations[stations.length - 1]) : null)
+    const nextNextCoord = i < stations.length - 2 ? getCoord(stations[i + 2]) : (isLoop ? getCoord(stations[0]) : null)
+    
+    const p0 = prevCoord || fromCoord
+    const p1 = fromCoord
+    const p2 = toCoord
+    const p3 = nextNextCoord || toCoord
+    
+    // Catmull-Rom to Cubic Bezier conversion
+    const tension = 0.5
+    const cp1x = p1.x + (p2.x - p0.x) * tension / 3
+    const cp1y = p1.y + (p2.y - p0.y) * tension / 3
+    const cp2x = p2.x - (p3.x - p1.x) * tension / 3
+    const cp2y = p2.y - (p3.y - p1.y) * tension / 3
+    
+    const pathData = `M ${p1.x} ${p1.y} C ${cp1x} ${cp1y}, ${cp2x} ${cp2y}, ${p2.x} ${p2.y}`
+    segments.push({ path: pathData })
+  }
+  
+  // For loop lines, connect last station to first station
+  if (isLoop && stations.length >= 2) {
+    const fromCoord = getCoord(stations[stations.length - 1])
+    const toCoord = getCoord(stations[0])
+    
+    if (fromCoord && toCoord) {
+      // Get surrounding points for smooth curve
+      const prevCoord = getCoord(stations[stations.length - 2])
+      const nextNextCoord = getCoord(stations[1])
+      
+      const p0 = prevCoord || fromCoord
+      const p1 = fromCoord
+      const p2 = toCoord
+      const p3 = nextNextCoord || toCoord
+      
+      const tension = 0.5
+      const cp1x = p1.x + (p2.x - p0.x) * tension / 3
+      const cp1y = p1.y + (p2.y - p0.y) * tension / 3
+      const cp2x = p2.x - (p3.x - p1.x) * tension / 3
+      const cp2y = p2.y - (p3.y - p1.y) * tension / 3
+      
+      const pathData = `M ${p1.x} ${p1.y} C ${cp1x} ${cp1y}, ${cp2x} ${cp2y}, ${p2.x} ${p2.y}`
+      segments.push({ path: pathData })
+    }
+  }
+  
+  return segments
+}
+
 // Calculate selected lines data with segments
 const selectedLinesData = computed(() => {
   const result = []
@@ -217,60 +277,14 @@ const selectedLinesData = computed(() => {
     const color = lineInfo.color || '#6B7280'
     const stations = lineInfo.stations
     const isLoop = lineInfo.is_loop || false  // Support loop lines
-    const segments = []
     
-    // Create smooth path segments for each pair of adjacent stations
-    for (let i = 0; i < stations.length - 1; i++) {
-      const fromCoord = getStationCoord(stations[i])
-      const toCoord = getStationCoord(stations[i + 1])
-      
-      if (!fromCoord || !toCoord) continue
-      
-      // Get coordinates for smooth curve calculation
-      const points = []
-      const prevCoord = i > 0 ? getStationCoord(stations[i - 1]) : (isLoop ? getStationCoord(stations[stations.length - 1]) : null)
-      const nextNextCoord = i < stations.length - 2 ? getStationCoord(stations[i + 2]) : (isLoop ? getStationCoord(stations[0]) : null)
-      
-      const p0 = prevCoord || fromCoord
-      const p1 = fromCoord
-      const p2 = toCoord
-      const p3 = nextNextCoord || toCoord
-      
-      // Catmull-Rom to Cubic Bezier conversion
-      const tension = 0.5
-      const cp1x = p1.x + (p2.x - p0.x) * tension / 3
-      const cp1y = p1.y + (p2.y - p0.y) * tension / 3
-      const cp2x = p2.x - (p3.x - p1.x) * tension / 3
-      const cp2y = p2.y - (p3.y - p1.y) * tension / 3
-      
-      const pathData = `M ${p1.x} ${p1.y} C ${cp1x} ${cp1y}, ${cp2x} ${cp2y}, ${p2.x} ${p2.y}`
-      segments.push({ path: pathData })
-    }
+    // Create segments for main line
+    const segments = createPathSegments(stations, isLoop, getStationCoord)
     
-    // For loop lines, connect last station to first station
-    if (isLoop && stations.length >= 2) {
-      const fromCoord = getStationCoord(stations[stations.length - 1])
-      const toCoord = getStationCoord(stations[0])
-      
-      if (fromCoord && toCoord) {
-        // Get surrounding points for smooth curve
-        const prevCoord = getStationCoord(stations[stations.length - 2])
-        const nextNextCoord = getStationCoord(stations[1])
-        
-        const p0 = prevCoord || fromCoord
-        const p1 = fromCoord
-        const p2 = toCoord
-        const p3 = nextNextCoord || toCoord
-        
-        const tension = 0.5
-        const cp1x = p1.x + (p2.x - p0.x) * tension / 3
-        const cp1y = p1.y + (p2.y - p0.y) * tension / 3
-        const cp2x = p2.x - (p3.x - p1.x) * tension / 3
-        const cp2y = p2.y - (p3.y - p1.y) * tension / 3
-        
-        const pathData = `M ${p1.x} ${p1.y} C ${cp1x} ${cp1y}, ${cp2x} ${cp2y}, ${p2.x} ${p2.y}`
-        segments.push({ path: pathData })
-      }
+    // Also create segments for branch stations (Y-branch lines like 5号线+)
+    if (lineInfo.branch_stations && lineInfo.branch_stations.length > 0) {
+      const branchSegments = createPathSegments(lineInfo.branch_stations, false, getStationCoord)
+      segments.push(...branchSegments)
     }
     
     result.push({
@@ -297,6 +311,7 @@ const stationToLinesMap = computed(() => {
     const lineInfo = gameStore.linesData[lineName]
     if (!lineInfo || !lineInfo.stations) continue
     
+    // Add main line stations
     for (const stationName of lineInfo.stations) {
       if (!map[stationName]) {
         map[stationName] = []
@@ -305,6 +320,22 @@ const stationToLinesMap = computed(() => {
         name: lineName,
         color: lineInfo.color || '#6B7280'
       })
+    }
+    
+    // Also add branch stations (Y-branch lines)
+    if (lineInfo.branch_stations && lineInfo.branch_stations.length > 0) {
+      for (const stationName of lineInfo.branch_stations) {
+        if (!map[stationName]) {
+          map[stationName] = []
+        }
+        // Avoid duplicate entries for the same line
+        if (!map[stationName].some(l => l.name === lineName)) {
+          map[stationName].push({
+            name: lineName,
+            color: lineInfo.color || '#6B7280'
+          })
+        }
+      }
     }
   }
   
@@ -325,7 +356,17 @@ const allStationsWithCoords = computed(() => {
     const lineInfo = gameStore.linesData[lineName]
     if (!lineInfo || !lineInfo.stations) continue
     
-    for (const stationName of lineInfo.stations) {
+    // Combine main stations and branch stations
+    const allStations = [...lineInfo.stations]
+    if (lineInfo.branch_stations && lineInfo.branch_stations.length > 0) {
+      for (const s of lineInfo.branch_stations) {
+        if (!allStations.includes(s)) {
+          allStations.push(s)
+        }
+      }
+    }
+    
+    for (const stationName of allStations) {
       if (!stationSet.has(stationName)) {
         const coord = getStationCoord(stationName)
         if (coord) {
@@ -525,7 +566,7 @@ const handleTouchEnd = () => {
 const loadMapData = async () => {
   try {
     loading.value = true
-    const response = await api.getMapCoordinates()
+    const response = await api.getMapCoordinates(gameStore.city)
     coordinates.value = response.data.stations || {}
   } catch (error) {
     console.error('Failed to load map coordinates:', error)
@@ -542,6 +583,12 @@ watch(() => props.selectedLines, () => {
     })
   }
 }, { deep: true })
+
+// Watch for city changes to reload map data
+watch(() => gameStore.city, async () => {
+  await loadMapData()
+  resetView()
+})
 
 // Initial load
 onMounted(async () => {

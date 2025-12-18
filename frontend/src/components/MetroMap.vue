@@ -251,6 +251,7 @@
 <script setup>
 import { ref, computed, onMounted, watch, nextTick } from 'vue'
 import api from '@/services/api'
+import { useGameStore } from '@/stores/game'
 
 const props = defineProps({
   // 'question' - only show start/end, 'answer' - show full path
@@ -393,20 +394,38 @@ const pathSegments = computed(() => {
     // Find the line that connects these two stations
     for (const [lineNameKey, lineData] of Object.entries(linesData.value)) {
       const stations = lineData.stations || []
+      const branchStations = lineData.branch_stations || []
       const isLoop = lineData.is_loop || false  // Support loop lines
+      
+      // Check main line stations
       const fromIdx = stations.indexOf(from)
       const toIdx = stations.indexOf(to)
       
-      if (fromIdx === -1 || toIdx === -1) continue
+      if (fromIdx !== -1 && toIdx !== -1) {
+        const diff = Math.abs(fromIdx - toIdx)
+        // Check adjacent: diff == 1 OR (loop line and diff == len - 1)
+        const isAdjacent = diff === 1 || (isLoop && diff === stations.length - 1)
+        
+        if (isAdjacent) {
+          color = lineData.color || color
+          lineName = lineNameKey
+          break
+        }
+      }
       
-      const diff = Math.abs(fromIdx - toIdx)
-      // Check adjacent: diff == 1 OR (loop line and diff == len - 1)
-      const isAdjacent = diff === 1 || (isLoop && diff === stations.length - 1)
-      
-      if (isAdjacent) {
-        color = lineData.color || color
-        lineName = lineNameKey
-        break
+      // Check branch stations (Y-branch lines)
+      if (branchStations.length > 0) {
+        const fromBranchIdx = branchStations.indexOf(from)
+        const toBranchIdx = branchStations.indexOf(to)
+        
+        if (fromBranchIdx !== -1 && toBranchIdx !== -1) {
+          const diff = Math.abs(fromBranchIdx - toBranchIdx)
+          if (diff === 1) {
+            color = lineData.color || color
+            lineName = lineNameKey
+            break
+          }
+        }
       }
     }
     
@@ -1306,11 +1325,14 @@ const handleTouchEnd = () => {
   lastTouchDistance.value = 0
 }
 
+// Game store for city
+const gameStore = useGameStore()
+
 // Load map data
 const loadMapData = async () => {
   try {
     loading.value = true
-    const response = await api.getMapCoordinates()
+    const response = await api.getMapCoordinates(gameStore.city)
     coordinates.value = response.data.stations || {}
     linesData.value = response.data.lines || {}
   } catch (error) {
@@ -1328,6 +1350,12 @@ watch(() => [props.startStation, props.endStation], () => {
     })
   }
 }, { immediate: false })
+
+// Watch for city changes to reload map data
+watch(() => gameStore.city, async () => {
+  await loadMapData()
+  resetView()
+})
 
 // Initial load
 onMounted(async () => {

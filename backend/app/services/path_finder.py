@@ -45,8 +45,9 @@ class PathFinder:
                 # Only process valid adjacent connections
                 for line in valid_lines:
                     cost = cur_cost + Decimal("1")
-                    if u_line is not None and line != u_line:
-                        cost += self.network.transfer_penalty
+                    # Use get_transfer_cost to handle both normal transfers and Y-branch reverse transfers
+                    transfer_cost = self.network.get_transfer_cost(u, u_line, line)
+                    cost += transfer_cost
                     
                     if cost < dist[(v, line)]:
                         dist[(v, line)] = cost
@@ -139,8 +140,9 @@ class PathFinder:
                 for curr_line in valid_lines:
                     # Cost = previous cost + 1 (travel) + transfer penalty (if needed)
                     new_cost = prev_cost + Decimal("1")
-                    if prev_line is not None and prev_line != curr_line:
-                        new_cost += self.network.transfer_penalty
+                    # Use get_transfer_cost to handle both normal transfers and Y-branch reverse transfers
+                    transfer_cost = self.network.get_transfer_cost(u, prev_line, curr_line)
+                    new_cost += transfer_cost
                     
                     # Update if this is better
                     if new_cost < dp[i + 1][curr_line][0]:

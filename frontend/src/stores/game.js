@@ -1,8 +1,26 @@
 import { defineStore } from 'pinia'
 import api from '@/services/api'
 
+// City configuration
+const CITY_CONFIG = {
+  sz: {
+    name: '深圳',
+    title: '🚇 深圳地铁寻路挑战',
+    subtitle: '找出两个站点之间的最短路径',
+  },
+  sh: {
+    name: '上海',
+    title: '🚇 上海地铁寻路挑战',
+    subtitle: '找出两个站点之间的最短路径',
+  }
+}
+
 export const useGameStore = defineStore('game', {
   state: () => ({
+    // City selection
+    city: 'sz',  // Default to Shenzhen
+    cityConfig: CITY_CONFIG,
+    
     // Available lines
     allLines: [],
     selectedLines: [],
@@ -33,7 +51,7 @@ export const useGameStore = defineStore('game', {
     hasSelectedLines: (state) => state.selectedLines.length > 0,
     hasStations: (state) => state.startStation && state.endStation,
     canSubmit: (state) => state.userPath.length >= 2,
-isPlaying: (state) => state.gameStatus === 'playing' || state.gameStatus === 'result' || state.gameStatus === 'query',
+    isPlaying: (state) => state.gameStatus === 'playing' || state.gameStatus === 'result' || state.gameStatus === 'query',
     // Selected lines sorted by the order in allLines (JSON order)
     sortedSelectedLines: (state) => {
       return state.allLines.filter(line => state.selectedLines.includes(line))
@@ -42,6 +60,10 @@ isPlaying: (state) => state.gameStatus === 'playing' || state.gameStatus === 're
       if (!state.shortestCost) return 0
       // 精确到整数，.5 则进 1
       return Math.ceil(state.shortestCost)
+    },
+    // Get current city display info
+    currentCityConfig: (state) => {
+      return state.cityConfig[state.city] || state.cityConfig.sz
     },
     // Get station to lines mapping (only for selected lines)
     stationLinesMap: (state) => {
@@ -55,6 +77,7 @@ isPlaying: (state) => state.gameStatus === 'playing' || state.gameStatus === 're
       for (const lineName of state.selectedLines) {
         const lineData = state.linesData[lineName]
         if (lineData && lineData.stations) {
+          // Add main line stations
           for (const station of lineData.stations) {
             if (!map[station]) {
               map[station] = []
@@ -63,6 +86,21 @@ isPlaying: (state) => state.gameStatus === 'playing' || state.gameStatus === 're
               name: lineName,
               color: lineData.color || '#3B82F6'
             })
+          }
+          // Also add branch stations (Y-branch lines like 5号线+)
+          if (lineData.branch_stations && lineData.branch_stations.length > 0) {
+            for (const station of lineData.branch_stations) {
+              if (!map[station]) {
+                map[station] = []
+              }
+              // Avoid duplicate entries for the same line
+              if (!map[station].some(l => l.name === lineName)) {
+                map[station].push({
+                  name: lineName,
+                  color: lineData.color || '#3B82F6'
+                })
+              }
+            }
           }
         }
       }
@@ -75,11 +113,42 @@ isPlaying: (state) => state.gameStatus === 'playing' || state.gameStatus === 're
   },
 
   actions: {
+    setCity(city) {
+      if (!this.cityConfig[city]) return
+      
+      const isNewCity = this.city !== city
+      const needsLoad = this.allLines.length === 0
+      
+      if (isNewCity) {
+        this.city = city
+        // Reset all game state when city changes
+        this.allLines = []
+        this.selectedLines = []
+        this.linesData = {}
+        this.availableStations = []
+        this.reachableStations = []
+        this.startStation = ''
+        this.endStation = ''
+        this.userPath = []
+        this.systemPaths = []
+        this.shortestCost = 0
+        this.validationResult = null
+        this.showAnswer = false
+        this.gameStatus = 'setup'
+        this.error = null
+      }
+      
+      // Load data if city changed or no data loaded yet
+      if (isNewCity || needsLoad) {
+        this.loadLines()
+      }
+    },
+
     async loadLines() {
       try {
         this.loading = true
         this.error = null
-        const response = await api.getLines()
+        const response = await api.getLines(this.city)
         this.allLines = response.data
         // Also load lines data for colors and stations
         await this.loadLinesData()
@@ -93,7 +162,7 @@ isPlaying: (state) => state.gameStatus === 'playing' || state.gameStatus === 're
 
     async loadLinesData() {
       try {
-        const response = await api.getMapCoordinates()
+        const response = await api.getMapCoordinates(this.city)
         this.linesData = response.data.lines || {}
       } catch (error) {
         console.error('Failed to load lines data:', error)
@@ -166,7 +235,7 @@ isPlaying: (state) => state.gameStatus === 'playing' || state.gameStatus === 're
       }
 
       try {
-        const response = await api.getStations(this.selectedLines)
+        const response = await api.getStations(this.city, this.selectedLines)
         this.availableStations = response.data.stations
       } catch (error) {
         console.error('Failed to load available stations:', error)
@@ -181,7 +250,7 @@ isPlaying: (state) => state.gameStatus === 'playing' || state.gameStatus === 're
       }
 
       try {
-        const response = await api.getReachableStations(this.selectedLines, this.startStation)
+        const response = await api.getReachableStations(this.city, this.selectedLines, this.startStation)
         this.reachableStations = response.data.stations
       } catch (error) {
         console.error('Failed to load reachable stations:', error)
@@ -218,11 +287,12 @@ isPlaying: (state) => state.gameStatus === 'playing' || state.gameStatus === 're
         this.validationResult = null
         this.showAnswer = false
         
-        const response = await api.randomStations(this.selectedLines)
+        const response = await api.randomStations(this.city, this.selectedLines)
         this.startStation = response.data.start
         this.endStation = response.data.end
         // 同时获取最短路径的 cost
         const pathResponse = await api.calculatePath(
+          this.city,
           this.selectedLines,
           response.data.start,
           response.data.end
@@ -255,6 +325,7 @@ isPlaying: (state) => state.gameStatus === 'playing' || state.gameStatus === 're
           
           // 获取最短路径的 cost
           const pathResponse = await api.calculatePath(
+            this.city,
             this.selectedLines,
             start,
             end
@@ -319,6 +390,7 @@ isPlaying: (state) => state.gameStatus === 'playing' || state.gameStatus === 're
         this.loading = true
         this.error = null
         const response = await api.validatePath(
+          this.city,
           this.selectedLines,
           this.startStation,
           this.endStation,
@@ -353,6 +425,7 @@ isPlaying: (state) => state.gameStatus === 'playing' || state.gameStatus === 're
         // 如果还没有获取过答案，先获取
         if (this.systemPaths.length === 0) {
           const pathResponse = await api.calculatePath(
+            this.city,
             this.selectedLines,
             this.startStation,
             this.endStation
@@ -415,6 +488,7 @@ isPlaying: (state) => state.gameStatus === 'playing' || state.gameStatus === 're
         
         // Get shortest path
         const pathResponse = await api.calculatePath(
+          this.city,
           this.selectedLines,
           this.startStation,
           this.endStation

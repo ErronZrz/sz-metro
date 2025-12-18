@@ -19,39 +19,39 @@ api.interceptors.response.use(
 
 export default {
   // Get all metro lines
-  getLines() {
-    return api.get('/lines')
+  getLines(city) {
+    return api.get(`/${city}/lines`)
   },
 
   // Get stations for a specific line
-  getLineStations(lineName) {
-    return api.get(`/lines/${lineName}/stations`)
+  getLineStations(city, lineName) {
+    return api.get(`/${city}/lines/${lineName}/stations`)
   },
 
   // Get all stations (optionally filtered by lines)
-  getStations(lines = null) {
+  getStations(city, lines = null) {
     const params = lines ? { lines: lines.join(',') } : {}
-    return api.get('/stations', { params })
+    return api.get(`/${city}/stations`, { params })
   },
 
   // Get reachable stations from start station
-  getReachableStations(lines, start) {
-    return api.post('/game/reachable-stations', { lines, start })
+  getReachableStations(city, lines, start) {
+    return api.post(`/${city}/game/reachable-stations`, { lines, start })
   },
 
   // Generate random start and end stations
-  randomStations(lines) {
-    return api.post('/game/random-stations', { lines })
+  randomStations(city, lines) {
+    return api.post(`/${city}/game/random-stations`, { lines })
   },
 
   // Calculate shortest path
-  calculatePath(lines, start, end) {
-    return api.post('/game/calculate-path', { lines, start, end })
+  calculatePath(city, lines, start, end) {
+    return api.post(`/${city}/game/calculate-path`, { lines, start, end })
   },
 
   // Validate user's path
-  validatePath(lines, start, end, userPath) {
-    return api.post('/game/validate-path', {
+  validatePath(city, lines, start, end, userPath) {
+    return api.post(`/${city}/game/validate-path`, {
       lines,
       start,
       end,
@@ -60,7 +60,7 @@ export default {
   },
 
   // Get map coordinates for visualization
-  getMapCoordinates() {
-    return api.get('/map/coordinates')
+  getMapCoordinates(city) {
+    return api.get(`/${city}/map/coordinates`)
   }
 }
