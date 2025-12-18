@@ -110,6 +110,7 @@
       <Transition name="tooltip-fade">
         <div
           v-if="tooltipVisible"
+          ref="tooltipEl"
           class="station-tooltip"
           :style="tooltipStyle"
         >
@@ -178,21 +179,68 @@ const lastTouchDistance = ref(0)
 const tooltipVisible = ref(false)
 const tooltipStation = ref(null)
 const tooltipPosition = ref({ x: 0, y: 0 })
+const tooltipEl = ref(null)
+const tooltipPlacement = ref({ h: 'right', v: 'bottom' }) // horizontal and vertical placement
 
-const tooltipStyle = computed(() => ({
-  left: `${tooltipPosition.value.x}px`,
-  top: `${tooltipPosition.value.y}px`
-}))
+const tooltipStyle = computed(() => {
+  const style = {
+    left: `${tooltipPosition.value.x}px`,
+    top: `${tooltipPosition.value.y}px`
+  }
+  
+  // Use transform based on placement to position tooltip correctly
+  const { h, v } = tooltipPlacement.value
+  const translateX = h === 'left' ? '-100%' : '0'
+  const translateY = v === 'top' ? '-100%' : '0'
+  style.transform = `translate(${translateX}, ${translateY})`
+  
+  return style
+})
 
 const showTooltip = (event, station) => {
   tooltipStation.value = station
-  const rect = mapWrapper.value?.getBoundingClientRect()
-  if (rect) {
-    tooltipPosition.value = {
-      x: event.clientX - rect.left + 10,
-      y: event.clientY - rect.top - 10
-    }
+  const wrapper = mapWrapper.value
+  if (!wrapper) return
+  
+  const rect = wrapper.getBoundingClientRect()
+  // Use scroll position to calculate correct position within the scrollable container
+  const mouseX = event.clientX - rect.left + wrapper.scrollLeft
+  const mouseY = event.clientY - rect.top + wrapper.scrollTop
+  
+  // Visible area dimensions (excluding scrollbars)
+  const visibleWidth = wrapper.clientWidth
+  const visibleHeight = wrapper.clientHeight
+  const scrollLeft = wrapper.scrollLeft
+  const scrollTop = wrapper.scrollTop
+  
+  // Estimate tooltip size (conservative estimate)
+  const tooltipWidth = 160
+  const tooltipHeight = 56
+  const offset = 10
+  const padding = 8 // Minimum padding from edges
+  
+  // Visible boundaries (in scroll coordinates)
+  const visibleRight = scrollLeft + visibleWidth - padding
+  const visibleBottom = scrollTop + visibleHeight - padding
+  
+  // Determine horizontal placement
+  let h = 'right'
+  let x = mouseX + offset
+  if (x + tooltipWidth > visibleRight) {
+    h = 'left'
+    x = mouseX - offset
   }
+  
+  // Determine vertical placement
+  let v = 'bottom'
+  let y = mouseY + offset
+  if (y + tooltipHeight > visibleBottom) {
+    v = 'top'
+    y = mouseY - offset
+  }
+  
+  tooltipPlacement.value = { h, v }
+  tooltipPosition.value = { x, y }
   tooltipVisible.value = true
 }
 
@@ -646,14 +694,18 @@ onMounted(async () => {
   border-radius: 8px;
   padding: 8px 12px;
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
-  max-width: 250px;
+  width: max-content;
+  max-width: none;
+  /* Prevent layout thrashing */
+  will-change: left, top;
+  contain: layout;
 }
 
 .tooltip-content {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 2px;
+  gap: 4px;
 }
 
 .station-name {
@@ -661,13 +713,14 @@ onMounted(async () => {
   color: #1f2937;
   font-size: 14px;
   text-align: center;
+  white-space: nowrap;
 }
 
 .line-tags {
   display: flex;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   justify-content: center;
-  gap: 3px;
+  gap: 4px;
 }
 
 .line-tag {
@@ -681,12 +734,11 @@ onMounted(async () => {
 /* Tooltip fade transition */
 .tooltip-fade-enter-active,
 .tooltip-fade-leave-active {
-  transition: opacity 0.15s ease, transform 0.15s ease;
+  transition: opacity 0.1s ease;
 }
 
 .tooltip-fade-enter-from,
 .tooltip-fade-leave-to {
   opacity: 0;
-  transform: translateY(4px);
 }
 </style>
