@@ -24,6 +24,14 @@
             上海地铁
           </router-link>
           <router-link
+            to="/gz"
+            class="px-4 py-2 rounded-lg text-sm font-medium transition-colors flex items-center gap-2"
+            :class="city === 'gz' ? 'bg-white text-blue-600' : 'bg-white/20 text-white hover:bg-white/30'"
+          >
+            <img :src="gzLogo" alt="广州地铁" class="w-6 h-6" />
+            广州地铁
+          </router-link>
+          <router-link
             to="/cs"
             class="px-4 py-2 rounded-lg text-sm font-medium transition-colors flex items-center gap-2"
             :class="city === 'cs' ? 'bg-white text-blue-600' : 'bg-white/20 text-white hover:bg-white/30'"
@@ -99,6 +107,7 @@ import GameResult from '@/components/GameResult.vue'
 import QueryResult from '@/components/QueryResult.vue'
 import szLogo from '@/assets/sz-logo.svg'
 import shLogo from '@/assets/sh-logo.svg'
+import gzLogo from '@/assets/gz_logo.svg'
 import csLogo from '@/assets/cs-logo.svg'
 
 // Props from router

@@ -19,6 +19,11 @@ const router = createRouter({
       props: { city: 'sh' }
     },
     {
+      path: '/gz',
+      component: App,
+      props: { city: 'gz' }
+    },
+    {
       path: '/cs',
       component: App,
       props: { city: 'cs' }
