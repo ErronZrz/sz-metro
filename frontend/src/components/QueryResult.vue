@@ -82,15 +82,18 @@ const handleReset = () => {
 
 // Format path with transfer annotations
 const formatPathWithTransfers = (pathData) => {
+  // Helper function to highlight only transfer annotations (containing '换乘')
+  const highlightTransfers = (str) => {
+    return str.replace(/\(([^)]*换乘[^)]*)\)/g, '<span class="text-orange-600 font-semibold">($1)</span>')
+  }
+  
   // New structured format: {annotated, stations, lines, transfers}
   if (pathData && pathData.annotated) {
-    return pathData.annotated.replace(/\(/g, '<span class="text-orange-600 font-semibold">(')
-                              .replace(/\)/g, ')</span>')
+    return highlightTransfers(pathData.annotated)
   }
   // Legacy string format with transfer annotations
   if (typeof pathData === 'string') {
-    return pathData.replace(/\(/g, '<span class="text-orange-600 font-semibold">(')
-                    .replace(/\)/g, ')</span>')
+    return highlightTransfers(pathData)
   }
   return String(pathData)
 }

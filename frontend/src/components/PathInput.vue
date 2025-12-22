@@ -393,15 +393,18 @@ const handleShowAnswer = async () => {
 
 // 格式化路径，标注换乘站
 const formatPathWithTransfers = (pathData) => {
+  // Helper function to highlight only transfer annotations (containing '换乘')
+  const highlightTransfers = (str) => {
+    return str.replace(/\(([^)]*换乘[^)]*)\)/g, '<span class="text-orange-600 font-semibold">($1)</span>')
+  }
+  
   // New structured format: {annotated, stations, lines, transfers}
   if (pathData && pathData.annotated) {
-    return pathData.annotated.replace(/\(/g, '<span class="text-orange-600 font-semibold">(')
-                              .replace(/\)/g, ')</span>')
+    return highlightTransfers(pathData.annotated)
   }
   // Legacy string format (带换乘标注)
   if (typeof pathData === 'string') {
-    return pathData.replace(/\(/g, '<span class="text-orange-600 font-semibold">(')
-                    .replace(/\)/g, ')</span>')
+    return highlightTransfers(pathData)
   }
   return String(pathData)
 }
