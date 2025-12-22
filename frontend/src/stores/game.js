@@ -5,22 +5,22 @@ import api from '@/services/api'
 const CITY_CONFIG = {
   sz: {
     name: '深圳',
-    title: '🚇 深圳地铁寻路挑战',
+    title: '深圳地铁寻路挑战',
     subtitle: '找出两个站点之间的最短路径',
   },
   sh: {
     name: '上海',
-    title: '🚇 上海地铁寻路挑战',
+    title: '上海地铁寻路挑战',
     subtitle: '找出两个站点之间的最短路径',
   },
   gz: {
     name: '广州',
-    title: '🚇 广州地铁寻路挑战',
+    title: '广州地铁寻路挑战',
     subtitle: '找出两个站点之间的最短路径',
   },
   cs: {
     name: '长沙',
-    title: '🚇 长沙地铁寻路挑战',
+    title: '长沙地铁寻路挑战',
     subtitle: '找出两个站点之间的最短路径',
   }
 }
