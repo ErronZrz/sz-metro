@@ -23,6 +23,7 @@ router = APIRouter()
 CITY_DATA_FILES = {
     "sz": "stations_coordinates.json",      # Shenzhen
     "sh": "stations_coordinates_sh.json",   # Shanghai
+    "bj": "stations_coordinates_bj.json",   # Beijing
     "gz": "stations_coordinates_gz.json",   # Guangzhou
     "cs": "stations_coordinates_cs.json",   # Changsha
 }
@@ -30,6 +31,7 @@ CITY_DATA_FILES = {
 CITY_NAMES = {
     "sz": "深圳",
     "sh": "上海",
+    "bj": "北京",
     "gz": "广州",
     "cs": "长沙",
 }

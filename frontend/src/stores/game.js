@@ -13,6 +13,11 @@ const CITY_CONFIG = {
     title: '上海地铁寻路挑战',
     subtitle: '找出两个站点之间的最短路径',
   },
+  bj: {
+    name: '北京',
+    title: '北京地铁寻路挑战',
+    subtitle: '找出两个站点之间的最短路径',
+  },
   gz: {
     name: '广州',
     title: '广州地铁寻路挑战',

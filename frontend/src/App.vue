@@ -118,7 +118,8 @@ import GameResult from '@/components/GameResult.vue'
 import QueryResult from '@/components/QueryResult.vue'
 import szLogo from '@/assets/sz-logo.svg'
 import shLogo from '@/assets/sh-logo.svg'
-import gzLogo from '@/assets/gz_logo.svg'
+import bjLogo from '@/assets/bj-logo.svg'
+import gzLogo from '@/assets/gz-logo.svg'
 import csLogo from '@/assets/cs-logo.svg'
 
 // Props from router
@@ -137,16 +138,18 @@ const isDropdownOpen = ref(false)
 const dropdownRef = ref(null)
 
 // City data
-const cityKeys = ['sz', 'sh', 'gz', 'cs']
+const cityKeys = ['sz', 'sh', 'bj', 'gz', 'cs']
 const cityNames = {
   sz: '深圳',
   sh: '上海',
+  bj: '北京',
   gz: '广州',
   cs: '长沙'
 }
 const cityLogos = {
   sz: szLogo,
   sh: shLogo,
+  bj: bjLogo,
   gz: gzLogo,
   cs: csLogo
 }
