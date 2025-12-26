@@ -396,6 +396,7 @@ const pathSegments = computed(() => {
       const stations = lineData.stations || []
       const branchStations = lineData.branch_stations || []
       const isLoop = lineData.is_loop || false  // Support loop lines
+      const oneWayLoop = lineData.one_way_loop || []  // Support one-way loops
       
       // Check main line stations
       const fromIdx = stations.indexOf(from)
@@ -404,7 +405,20 @@ const pathSegments = computed(() => {
       if (fromIdx !== -1 && toIdx !== -1) {
         const diff = Math.abs(fromIdx - toIdx)
         // Check adjacent: diff == 1 OR (loop line and diff == len - 1)
-        const isAdjacent = diff === 1 || (isLoop && diff === stations.length - 1)
+        let isAdjacent = diff === 1 || (isLoop && diff === stations.length - 1)
+        
+        // Check one-way loop adjacency
+        if (!isAdjacent && oneWayLoop.length >= 2) {
+          const fromLoopIdx = oneWayLoop.indexOf(from)
+          const toLoopIdx = oneWayLoop.indexOf(to)
+          if (fromLoopIdx !== -1 && toLoopIdx !== -1) {
+            // In one-way loop: from -> to is valid if toLoopIdx = (fromLoopIdx + 1) % len
+            // OR: to -> from loop closure (last -> first)
+            const forwardAdjacent = (fromLoopIdx + 1) % oneWayLoop.length === toLoopIdx
+            const backwardAdjacent = (toLoopIdx + 1) % oneWayLoop.length === fromLoopIdx
+            isAdjacent = forwardAdjacent || backwardAdjacent
+          }
+        }
         
         if (isAdjacent) {
           color = lineData.color || color

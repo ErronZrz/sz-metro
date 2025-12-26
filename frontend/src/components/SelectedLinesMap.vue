@@ -255,7 +255,7 @@ const getStationCoord = (stationName) => {
 }
 
 // Helper function to create path segments for a list of stations
-const createPathSegments = (stations, isLoop, getCoord) => {
+const createPathSegments = (stations, isLoop, oneWayLoop, getCoord) => {
   const segments = []
   
   // Create smooth path segments for each pair of adjacent stations
@@ -311,6 +311,39 @@ const createPathSegments = (stations, isLoop, getCoord) => {
     }
   }
   
+  // For one-way loops, connect the loop stations in a circle
+  // one_way_loop is an array like ["三元桥", "3号航站楼", "2号航站楼"]
+  // We need to connect: last station -> first station (closing the loop)
+  if (oneWayLoop && oneWayLoop.length >= 2) {
+    const loopLast = oneWayLoop[oneWayLoop.length - 1]
+    const loopFirst = oneWayLoop[0]
+    
+    const fromCoord = getCoord(loopLast)
+    const toCoord = getCoord(loopFirst)
+    
+    if (fromCoord && toCoord) {
+      // Get surrounding points for smooth curve
+      const prevIdx = oneWayLoop.length >= 2 ? oneWayLoop.length - 2 : 0
+      const nextIdx = oneWayLoop.length >= 2 ? 1 : 0
+      const prevCoord = getCoord(oneWayLoop[prevIdx])
+      const nextNextCoord = getCoord(oneWayLoop[nextIdx])
+      
+      const p0 = prevCoord || fromCoord
+      const p1 = fromCoord
+      const p2 = toCoord
+      const p3 = nextNextCoord || toCoord
+      
+      const tension = 0.5
+      const cp1x = p1.x + (p2.x - p0.x) * tension / 3
+      const cp1y = p1.y + (p2.y - p0.y) * tension / 3
+      const cp2x = p2.x - (p3.x - p1.x) * tension / 3
+      const cp2y = p2.y - (p3.y - p1.y) * tension / 3
+      
+      const pathData = `M ${p1.x} ${p1.y} C ${cp1x} ${cp1y}, ${cp2x} ${cp2y}, ${p2.x} ${p2.y}`
+      segments.push({ path: pathData })
+    }
+  }
+  
   return segments
 }
 
@@ -325,13 +358,14 @@ const selectedLinesData = computed(() => {
     const color = lineInfo.color || '#6B7280'
     const stations = lineInfo.stations
     const isLoop = lineInfo.is_loop || false  // Support loop lines
+    const oneWayLoop = lineInfo.one_way_loop || null  // Support one-way loops
     
     // Create segments for main line
-    const segments = createPathSegments(stations, isLoop, getStationCoord)
+    const segments = createPathSegments(stations, isLoop, oneWayLoop, getStationCoord)
     
     // Also create segments for branch stations (Y-branch lines like 5号线+)
     if (lineInfo.branch_stations && lineInfo.branch_stations.length > 0) {
-      const branchSegments = createPathSegments(lineInfo.branch_stations, false, getStationCoord)
+      const branchSegments = createPathSegments(lineInfo.branch_stations, false, null, getStationCoord)
       segments.push(...branchSegments)
     }
     

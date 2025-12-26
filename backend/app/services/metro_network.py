@@ -34,8 +34,16 @@ class MetroNetwork:
         # e.g., {"5号线": {"main_segment": set(), "branch_segment": set()}}
         self.branch_segments = {}
         
+        # One-way loop info: maps line name to one-way loop stations
+        # e.g., {"首都机场线": ["三元桥", "3号航站楼", "2号航站楼"]}
+        # The loop goes in the order specified (forward only)
+        self.one_way_loops = {}
+        
         # Detect and setup branch lines
         self._detect_branch_lines()
+        
+        # Detect one-way loops
+        self._detect_one_way_loops()
     
     def _load_lines(self, json_file: str) -> Dict[str, Union[List[str], dict]]:
         """Load line data from JSON file (stations_coordinates.json)"""
@@ -72,6 +80,16 @@ class MetroNetwork:
             return line_data.get("is_loop", False)
         return False
     
+    def _get_one_way_loop(self, line_name: str) -> List[str]:
+        """
+        Get one-way loop stations for a line.
+        Returns empty list if not a one-way loop line.
+        """
+        line_data = self.lines[line_name]
+        if isinstance(line_data, dict):
+            return line_data.get("one_way_loop", [])
+        return []
+    
     def _are_adjacent_on_line(self, station_a: str, station_b: str, line_name: str) -> bool:
         """
         Check if two stations are adjacent on a given line (supports loop lines and virtual segments).
@@ -101,6 +119,20 @@ class MetroNetwork:
         # For loop lines, first and last stations are also adjacent
         if self._is_loop_line(base_line_name) and diff == len(stations) - 1:
             return True
+        
+        # Check one-way loop adjacency
+        if base_line_name in self.one_way_loops:
+            one_way_stations = self.one_way_loops[base_line_name]
+            if station_a in one_way_stations and station_b in one_way_stations:
+                try:
+                    idx_a_loop = one_way_stations.index(station_a)
+                    idx_b_loop = one_way_stations.index(station_b)
+                    # In one-way loop, only forward direction is allowed
+                    # a -> b is valid if idx_b = (idx_a + 1) % len(one_way_stations)
+                    if (idx_a_loop + 1) % len(one_way_stations) == idx_b_loop:
+                        return True
+                except ValueError:
+                    pass
         
         return False
 
@@ -185,6 +217,21 @@ class MetroNetwork:
                 "branch_segment": branch_segment,       # Stations on branch (excluding junction)
                 "junction": junction
             }
+    
+    def _detect_one_way_loops(self) -> None:
+        """
+        Detect one-way loop sections within lines.
+        One-way loops are identified by the 'one_way_loop' field in line data.
+        
+        Example: Beijing Airport Express has a one-way loop:
+        三元桥 -> 3号航站楼 -> 2号航站楼 -> 三元桥 (one direction only)
+        
+        The one_way_loop field is an array of station names in the order of travel.
+        """
+        for line_name in self.lines.keys():
+            one_way_loop = self._get_one_way_loop(line_name)
+            if one_way_loop and len(one_way_loop) >= 2:
+                self.one_way_loops[line_name] = one_way_loop
     
     def _get_effective_line_name(self, line_name: str) -> str:
         """
@@ -322,15 +369,37 @@ class MetroNetwork:
                 for s in stations:
                     self.station_lines[s].add(line_name)
             
+            # Check if this line has a one-way loop
+            one_way_loop_stations = self.one_way_loops.get(line_name, [])
+            one_way_loop_set = set(one_way_loop_stations)
+            
             # Connect adjacent stations
             for a, b in zip(stations, stations[1:]):
-                self.graph[a].add(b)
-                self.graph[b].add(a)
+                # Check if this edge is within a one-way loop
+                if a in one_way_loop_set and b in one_way_loop_set:
+                    # Within one-way loop: check direction
+                    idx_a = one_way_loop_stations.index(a)
+                    idx_b = one_way_loop_stations.index(b)
+                    # Only add forward direction edge
+                    if (idx_a + 1) % len(one_way_loop_stations) == idx_b:
+                        self.graph[a].add(b)
+                    # Note: reverse direction within loop is handled by the loop closing edge
+                else:
+                    # Normal bidirectional edge
+                    self.graph[a].add(b)
+                    self.graph[b].add(a)
             
             # For loop lines, connect last station to first station
             if is_loop and len(stations) >= 2:
                 self.graph[stations[-1]].add(stations[0])
                 self.graph[stations[0]].add(stations[-1])
+            
+            # For one-way loops, add the closing edge (last -> first in loop)
+            if one_way_loop_stations and len(one_way_loop_stations) >= 2:
+                loop_last = one_way_loop_stations[-1]
+                loop_first = one_way_loop_stations[0]
+                # Add closing edge: last station -> first station of one-way loop
+                self.graph[loop_last].add(loop_first)
     
     def _validate_lines(self, user_lines: List[str]) -> bool:
         """Validate if line names exist"""
