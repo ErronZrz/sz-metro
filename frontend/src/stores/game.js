@@ -23,6 +23,11 @@ const CITY_CONFIG = {
     title: '广州地铁寻路挑战',
     subtitle: '找出两个站点之间的最短路径',
   },
+  wh: {
+    name: '武汉',
+    title: '武汉地铁寻路挑战',
+    subtitle: '找出两个站点之间的最短路径',
+  },
   cs: {
     name: '长沙',
     title: '长沙地铁寻路挑战',

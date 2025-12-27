@@ -4,7 +4,7 @@ from app.routers import metro
 
 app = FastAPI(
     title="地铁寻路游戏 API",
-    description="地铁最短路径查找和验证 API（支持深圳、上海、北京、广州、长沙）",
+    description="地铁最短路径查找和验证 API（支持深圳、上海、北京、广州、武汉、长沙）",
     version="1.3.0"
 )
 
@@ -26,5 +26,5 @@ async def root():
         "message": "地铁寻路游戏 API",
         "docs": "/docs",
         "version": "1.3.0",
-        "supported_cities": ["sz", "sh", "bj", "gz", "cs"]
+        "supported_cities": ["sz", "sh", "bj", "gz", "wh", "cs"]
     }

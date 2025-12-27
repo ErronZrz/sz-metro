@@ -25,6 +25,7 @@ CITY_DATA_FILES = {
     "sh": "stations_coordinates_sh.json",   # Shanghai
     "bj": "stations_coordinates_bj.json",   # Beijing
     "gz": "stations_coordinates_gz.json",   # Guangzhou
+    "wh": "stations_coordinates_wh.json",   # Wuhan
     "cs": "stations_coordinates_cs.json",   # Changsha
 }
 
@@ -33,6 +34,7 @@ CITY_NAMES = {
     "sh": "上海",
     "bj": "北京",
     "gz": "广州",
+    "wh": "武汉",
     "cs": "长沙",
 }
 

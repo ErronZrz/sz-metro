@@ -120,6 +120,7 @@ import szLogo from '@/assets/sz-logo.svg'
 import shLogo from '@/assets/sh-logo.svg'
 import bjLogo from '@/assets/bj-logo.svg'
 import gzLogo from '@/assets/gz-logo.svg'
+import whLogo from '@/assets/wh-logo.png'
 import csLogo from '@/assets/cs-logo.svg'
 
 // Props from router
@@ -138,12 +139,13 @@ const isDropdownOpen = ref(false)
 const dropdownRef = ref(null)
 
 // City data
-const cityKeys = ['sz', 'sh', 'bj', 'gz', 'cs']
+const cityKeys = ['sz', 'sh', 'bj', 'gz', 'wh', 'cs']
 const cityNames = {
   sz: '深圳',
   sh: '上海',
   bj: '北京',
   gz: '广州',
+  wh: '武汉',
   cs: '长沙'
 }
 const cityLogos = {
@@ -151,6 +153,7 @@ const cityLogos = {
   sh: shLogo,
   bj: bjLogo,
   gz: gzLogo,
+  wh: whLogo,
   cs: csLogo
 }
 
