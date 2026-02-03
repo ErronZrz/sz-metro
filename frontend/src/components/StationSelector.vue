@@ -32,33 +32,33 @@
       <button
         @click="handleRandomStations"
         :disabled="!gameStore.hasSelectedLines"
-        class="flex-1 px-6 py-3 bg-metro-secondary text-white rounded-lg hover:bg-green-700 transition font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+        class="flex-1 px-6 py-3 bg-metro-secondary text-white rounded-lg hover:bg-green-700 transition font-medium disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
       >
-        🎲 随机生成起终点
+        <Shuffle class="w-5 h-5" /> 随机生成起终点
       </button>
       <button
         v-if="gameStore.startStation && gameStore.endStation"
         @click="handleStartGame"
-        class="flex-1 px-6 py-3 bg-metro-primary text-white rounded-lg hover:bg-blue-700 transition font-medium"
+        class="flex-1 px-6 py-3 bg-metro-primary text-white rounded-lg hover:bg-blue-700 transition font-medium flex items-center justify-center gap-2"
       >
-        ▶️ 开始游戏
+        <Play class="w-5 h-5" /> 开始游戏
       </button>
       <button
         v-if="gameStore.startStation && gameStore.endStation"
         @click="handleQueryRoute"
-        class="flex-1 px-6 py-3 bg-amber-500 text-white rounded-lg hover:bg-amber-600 transition font-medium"
+        class="flex-1 px-6 py-3 bg-amber-500 text-white rounded-lg hover:bg-amber-600 transition font-medium flex items-center justify-center gap-2"
       >
-        🔍 查询路线
+        <Search class="w-5 h-5" /> 查询路线
       </button>
     </div>
 
     <div v-if="gameStore.hasStations" class="p-4 bg-blue-50 border border-blue-200 rounded-lg">
-      <p class="text-blue-700">
-        🎯 起点: <span class="font-bold">{{ gameStore.startStation }}</span> → 
+      <p class="text-blue-700 flex items-center gap-1">
+        <Navigation class="w-5 h-5" /> 起点: <span class="font-bold">{{ gameStore.startStation }}</span> → 
         终点: <span class="font-bold">{{ gameStore.endStation }}</span>
       </p>
-      <p v-if="gameStore.gameStatus === 'playing' && gameStore.displayCost > 0" class="text-blue-600 mt-2">
-        💡 提示：最短路径大约需要 <span class="font-bold text-lg">{{ gameStore.displayCost }}</span> 站
+      <p v-if="gameStore.gameStatus === 'playing' && gameStore.displayCost > 0" class="text-blue-600 mt-2 flex items-center gap-1">
+        <Info class="w-4 h-4" /> 提示：最短路径大约需要 <span class="font-bold text-lg">{{ gameStore.displayCost }}</span> 站
       </p>
     </div>
   </div>
@@ -68,6 +68,7 @@
 import { computed, watch, ref } from 'vue'
 import { useGameStore } from '@/stores/game'
 import SearchableSelect from './SearchableSelect.vue'
+import { Shuffle, Play, Search, Navigation, Info } from 'lucide-vue-next'
 
 const gameStore = useGameStore()
 

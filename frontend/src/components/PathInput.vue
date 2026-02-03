@@ -13,8 +13,8 @@
 
     <!-- All Shortest Paths (查看答案后显示，紧跟在地图下方) -->
     <div v-if="gameStore.showAnswer && gameStore.systemPaths.length > 0" class="p-4 bg-blue-50 rounded-lg border-2 border-blue-300">
-      <h4 class="font-semibold text-blue-700 mb-3">
-        ✅ 所有最短路径 (共 {{ gameStore.systemPaths.length }} 条) (minCost = {{ formattedCost }}):
+      <h4 class="font-semibold text-blue-700 mb-3 flex items-center gap-1">
+        <BadgeCheck class="w-5 h-5" /> 所有最短路径 (共 {{ gameStore.systemPaths.length }} 条) (minCost = {{ formattedCost }}):
       </h4>
       <div class="space-y-2">
         <div
@@ -36,7 +36,10 @@
            'bg-yellow-50 border-yellow-300': gameStore.validationResult.valid
          }">
       <div class="flex items-start gap-3">
-        <span class="text-2xl">💡</span>
+        <MessageCircle class="w-7 h-7 text-current flex-shrink-0 mt-0.5" :class="{
+          'text-orange-500': !gameStore.validationResult.valid,
+          'text-yellow-500': gameStore.validationResult.valid
+        }" />
         <div class="flex-1">
           <h4 class="font-semibold mb-1"
               :class="{
@@ -52,12 +55,12 @@
              }">
             {{ gameStore.validationResult.error_reason || gameStore.validationResult.message }}
           </p>
-          <p class="text-sm mt-2 font-medium"
+          <p class="text-sm mt-2 font-medium flex items-center gap-1"
              :class="{
                'text-orange-700': !gameStore.validationResult.valid,
                'text-yellow-700': gameStore.validationResult.valid
              }">
-            💪 请在下方继续修改你的路径，然后重新提交
+            <ThumbsUp class="w-4 h-4" /> 请在下方继续修改你的路径，然后重新提交
           </p>
           <!-- 显示用户路径的换乘信息（仅当路径合法但非最优时） -->
           <div v-if="gameStore.validationResult.valid && gameStore.validationResult.user_path_annotated" 
@@ -79,7 +82,7 @@
     <!-- Input Area -->
     <div class="flex gap-2 items-end">
       <div class="flex-1">
-        <label class="block text-sm font-medium text-gray-700 mb-1">添加站点</label>
+        <label class="block text-sm font-medium text-gray-700 mb-1 flex items-center gap-1"><MapPinPlus class="w-4 h-4" /> 添加站点</label>
         <SearchableSelect
           :value="currentStation"
           :options="gameStore.availableStations"
@@ -92,16 +95,16 @@
       </div>
       <button
         @click="gameStore.clearPath"
-        class="px-6 py-2 bg-gray-300 text-gray-700 rounded-lg hover:bg-gray-400 transition"
+        class="px-6 py-2 bg-gray-300 text-gray-700 rounded-lg hover:bg-gray-400 transition flex items-center gap-1"
       >
-        清空
+        <Eraser class="w-4 h-4" /> 清空
       </button>
     </div>
 
     <!-- Current Path Display -->
     <div v-if="gameStore.userPath.length > 0" class="p-4 bg-gray-50 rounded-lg">
-      <h3 class="text-sm font-medium text-gray-700 mb-3">当前路径 ({{ gameStore.userPath.length }} 站):</h3>
-      <p class="text-xs text-gray-500 mb-3">💡 点击站点之间的 <span class="text-green-600 font-bold">+</span> 可以插入新站点</p>
+      <h3 class="text-sm font-medium text-gray-700 mb-3 flex items-center gap-1"><Footprints class="w-4 h-4" /> 当前路径 ({{ gameStore.userPath.length }} 站):</h3>
+      <p class="text-xs text-gray-500 mb-3 flex items-center gap-1"><Lightbulb class="w-3 h-3" /> 点击站点之间的 <span class="text-green-600 font-bold">+</span> 可以插入新站点</p>
       <div class="flex flex-wrap items-center gap-1">
         <template v-for="(station, index) in gameStore.userPath" :key="index">
           <!-- 站点标签 -->
@@ -169,28 +172,28 @@
     <!-- Submit Button & Action Buttons -->
     <div v-if="!gameStore.showAnswer" class="space-y-4">
       <!-- 提交按钮 -->
-      <div class="text-center">
+      <div class="flex justify-center">
         <button
           @click="handleSubmit"
           :disabled="!gameStore.canSubmit"
-          class="px-8 py-3 bg-metro-secondary text-white rounded-lg hover:bg-green-700 transition font-medium disabled:bg-gray-300 disabled:cursor-not-allowed"
+          class="px-8 py-3 bg-metro-secondary text-white rounded-lg hover:bg-green-700 transition font-medium disabled:bg-gray-300 disabled:cursor-not-allowed flex items-center gap-2"
         >
-          🚀 {{ gameStore.validationResult && !gameStore.validationResult.is_shortest ? '重新提交' : '提交答案' }}
+          <Send class="w-5 h-5" /> {{ gameStore.validationResult && !gameStore.validationResult.is_shortest ? '重新提交' : '提交答案' }}
         </button>
       </div>
       <!-- 重新选站 & 查看正确答案 -->
       <div class="flex justify-center gap-4">
         <button
           @click="gameStore.resetGame()"
-          class="px-8 py-3 bg-gray-400 text-white rounded-lg hover:bg-gray-500 transition font-medium"
+          class="px-8 py-3 bg-gray-400 text-white rounded-lg hover:bg-gray-500 transition font-medium flex items-center gap-2"
         >
-          🎮 重新选站
+          <RefreshCw class="w-5 h-5" /> 重新选站
         </button>
         <button
           @click="handleShowAnswer"
-          class="px-6 py-3 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition font-medium"
+          class="px-6 py-3 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition font-medium flex items-center gap-2"
         >
-          🔎 查看正确答案
+          <Eye class="w-5 h-5" /> 查看正确答案
         </button>
       </div>
     </div>
@@ -200,22 +203,22 @@
       <button
         @click="handleSubmit"
         :disabled="!gameStore.canSubmit"
-        class="px-8 py-3 bg-metro-secondary text-white rounded-lg hover:bg-green-700 transition font-medium disabled:bg-gray-300 disabled:cursor-not-allowed"
+        class="px-8 py-3 bg-metro-secondary text-white rounded-lg hover:bg-green-700 transition font-medium disabled:bg-gray-300 disabled:cursor-not-allowed flex items-center gap-2"
       >
-        🚀 {{ gameStore.validationResult && !gameStore.validationResult.is_shortest ? '重新提交' : '提交答案' }}
+        <Send class="w-5 h-5" /> {{ gameStore.validationResult && !gameStore.validationResult.is_shortest ? '重新提交' : '提交答案' }}
       </button>
       <button
         @click="gameStore.resetGame()"
-        class="px-8 py-3 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition font-medium"
+        class="px-8 py-3 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition font-medium flex items-center gap-2"
       >
-        🎮 重新选站
+        <RefreshCw class="w-5 h-5" /> 重新选站
       </button>
     </div>
 
     <!-- Hint -->
     <div class="p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
-      <p class="text-sm text-yellow-800">
-        💡 提示: 换乘会增加 2.5 站的成本。尽量减少换乘次数！
+      <p class="text-sm text-yellow-800 flex items-center gap-1">
+        <Lightbulb class="w-4 h-4" /> 提示: 换乘会增加 2.5 站的成本。尽量减少换乘次数！
       </p>
     </div>
   </div>
@@ -226,6 +229,7 @@ import { ref, computed, nextTick } from 'vue'
 import { useGameStore } from '@/stores/game'
 import SearchableSelect from './SearchableSelect.vue'
 import MetroMap from './MetroMap.vue'
+import { BadgeCheck, MessageCircle, ThumbsUp, Send, RefreshCw, Eye, Lightbulb, Eraser, MapPinPlus, Footprints } from 'lucide-vue-next'
 
 const gameStore = useGameStore()
 

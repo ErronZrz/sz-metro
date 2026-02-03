@@ -38,3 +38,6 @@ frontend/.vite/
 # Logs
 *.log
 logs/
+
+# CodeBuddy
+.codebuddy/

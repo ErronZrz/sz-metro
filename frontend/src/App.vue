@@ -69,31 +69,41 @@
         <div v-else>
           <!-- Step 1: Line Selection -->
           <section class="mb-8">
-            <h2 class="text-2xl font-bold text-gray-800 mb-4">📍 步骤 1: 选择线路</h2>
+            <h2 class="text-2xl font-bold text-gray-800 mb-4 flex items-center gap-2">
+              <ListChecks class="w-6 h-6" /> 步骤 1: 选择线路
+            </h2>
             <LineSelector />
           </section>
 
           <!-- Step 2: Station Selection -->
           <section v-if="gameStore.hasSelectedLines" class="mb-8">
-            <h2 class="text-2xl font-bold text-gray-800 mb-4">🎯 步骤 2: 设定起终点</h2>
+            <h2 class="text-2xl font-bold text-gray-800 mb-4 flex items-center gap-2">
+              <Crosshair class="w-6 h-6" /> 步骤 2: 设定起终点
+            </h2>
             <StationSelector />
           </section>
 
           <!-- Step 3: Path Input -->
           <section v-if="gameStore.gameStatus === 'playing'" class="mb-8">
-            <h2 class="text-2xl font-bold text-gray-800 mb-4">✏️ 步骤 3: 输入你的路径</h2>
+            <h2 class="text-2xl font-bold text-gray-800 mb-4 flex items-center gap-2">
+              <PencilLine class="w-6 h-6" /> 步骤 3: 输入你的路径
+            </h2>
             <PathInput />
           </section>
 
           <!-- Step 4: Results (只在答对时显示) -->
           <section v-if="gameStore.gameStatus === 'result'">
-            <h2 class="text-2xl font-bold text-gray-800 mb-4">🎉 恭喜答对！</h2>
+            <h2 class="text-2xl font-bold text-gray-800 mb-4 flex items-center gap-2">
+              <Trophy class="w-6 h-6" /> 恭喜答对！
+            </h2>
             <GameResult />
           </section>
 
           <!-- Query Mode: 只展示路线查询结果 -->
           <section v-if="gameStore.gameStatus === 'query'">
-            <h2 class="text-2xl font-bold text-gray-800 mb-4">🔍 路线查询结果</h2>
+            <h2 class="text-2xl font-bold text-gray-800 mb-4 flex items-center gap-2">
+              <Route class="w-6 h-6" /> 路线查询结果
+            </h2>
             <QueryResult />
           </section>
         </div>
@@ -116,6 +126,7 @@ import StationSelector from '@/components/StationSelector.vue'
 import PathInput from '@/components/PathInput.vue'
 import GameResult from '@/components/GameResult.vue'
 import QueryResult from '@/components/QueryResult.vue'
+import { ListChecks, Crosshair, PencilLine, Trophy, Route } from 'lucide-vue-next'
 import szLogo from '@/assets/sz-logo.svg'
 import shLogo from '@/assets/sh-logo.svg'
 import bjLogo from '@/assets/bj-logo.svg'

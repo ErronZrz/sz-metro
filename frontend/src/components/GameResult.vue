@@ -13,8 +13,8 @@
 
     <!-- All Shortest Paths (答对时自动显示，紧跟在地图下方) -->
     <div v-if="gameStore.systemPaths.length > 0" class="p-4 bg-blue-50 rounded-lg border-2 border-blue-300">
-      <h4 class="font-semibold text-blue-700 mb-3">
-        ✅ 所有最短路径 (共 {{ gameStore.systemPaths.length }} 条) (minCost = {{ formattedCost }}):
+      <h4 class="font-semibold text-blue-700 mb-3 flex items-center gap-1">
+        <BadgeCheck class="w-5 h-5" /> 所有最短路径 (共 {{ gameStore.systemPaths.length }} 条) (minCost = {{ formattedCost }}):
       </h4>
       <div class="space-y-2">
         <div
@@ -30,8 +30,8 @@
 
     <!-- Result Message (只显示答对的情况) -->
     <div class="p-6 rounded-lg border-2 bg-green-50 border-green-500">
-      <h3 class="text-2xl font-bold mb-2 text-green-700">
-        🎉 恭喜！答对了！
+      <h3 class="text-2xl font-bold mb-2 text-green-700 flex items-center gap-2">
+        <Trophy class="w-7 h-7" /> 恭喜！答对了！
       </h3>
       
       <div class="mt-4 space-y-2">
@@ -54,9 +54,9 @@
     <div class="text-center">
       <button
         @click="handleNewGame"
-        class="px-8 py-3 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition font-medium"
+        class="px-8 py-3 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition font-medium flex items-center gap-2"
       >
-        🎮 重新选站
+        <RefreshCw class="w-5 h-5" /> 重新选站
       </button>
     </div>
   </div>
@@ -66,6 +66,7 @@
 import { computed } from 'vue'
 import { useGameStore } from '@/stores/game'
 import MetroMap from './MetroMap.vue'
+import { BadgeCheck, Trophy, RefreshCw } from 'lucide-vue-next'
 
 const gameStore = useGameStore()
 

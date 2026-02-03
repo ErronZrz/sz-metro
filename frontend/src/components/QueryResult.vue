@@ -13,8 +13,8 @@
 
     <!-- All Shortest Paths -->
     <div v-if="gameStore.systemPaths.length > 0" class="p-4 bg-blue-50 rounded-lg border-2 border-blue-300">
-      <h4 class="font-semibold text-blue-700 mb-3">
-        ✅ 所有最短路径 (共 {{ gameStore.systemPaths.length }} 条，乘坐 {{ stationCount }} 站):
+      <h4 class="font-semibold text-blue-700 mb-3 flex items-center gap-1">
+        <BadgeCheck class="w-5 h-5" /> 所有最短路径 (共 {{ gameStore.systemPaths.length }} 条，乘坐 {{ stationCount }} 站):
       </h4>
       <div class="space-y-2">
         <div
@@ -32,9 +32,9 @@
     <div class="text-center">
       <button
         @click="handleReset"
-        class="px-8 py-3 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition font-medium"
+        class="px-8 py-3 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition font-medium flex items-center gap-2 mx-auto"
       >
-        🎮 重新选站
+        <RefreshCw class="w-5 h-5" /> 重新选站
       </button>
     </div>
   </div>
@@ -44,6 +44,7 @@
 import { computed } from 'vue'
 import { useGameStore } from '@/stores/game'
 import MetroMap from './MetroMap.vue'
+import { BadgeCheck, RefreshCw } from 'lucide-vue-next'
 
 const gameStore = useGameStore()
 

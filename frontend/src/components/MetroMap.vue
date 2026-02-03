@@ -1,25 +1,27 @@
 <template>
   <div class="metro-map-container">
     <div class="map-header flex justify-between items-center mb-2">
-      <h4 class="font-semibold text-gray-700">
-        {{ mode === 'question' ? '📍 起终点位置' : '🗺️ 路径可视化' }}
+      <h4 class="font-semibold text-gray-700 flex items-center gap-1">
+        <MapPin v-if="mode === 'question'" class="w-5 h-5" />
+        <Map v-else class="w-5 h-5" />
+        {{ mode === 'question' ? '起终点位置' : '路径可视化' }}
       </h4>
       <div class="flex gap-2">
         <button 
           @click="zoomIn" 
-          class="px-2 py-1 bg-gray-200 rounded hover:bg-gray-300 text-sm"
+          class="p-1.5 bg-gray-200 rounded hover:bg-gray-300"
           title="放大"
-        >+</button>
+        ><ZoomIn class="w-4 h-4" /></button>
         <button 
           @click="zoomOut" 
-          class="px-2 py-1 bg-gray-200 rounded hover:bg-gray-300 text-sm"
+          class="p-1.5 bg-gray-200 rounded hover:bg-gray-300"
           title="缩小"
-        >-</button>
+        ><ZoomOut class="w-4 h-4" /></button>
         <button 
           @click="resetView" 
-          class="px-2 py-1 bg-gray-200 rounded hover:bg-gray-300 text-sm"
+          class="p-1.5 bg-gray-200 rounded hover:bg-gray-300"
           title="重置视图"
-        >⟲</button>
+        ><RotateCcw class="w-4 h-4" /></button>
       </div>
     </div>
     
@@ -252,6 +254,7 @@
 import { ref, computed, onMounted, watch, nextTick } from 'vue'
 import api from '@/services/api'
 import { useGameStore } from '@/stores/game'
+import { MapPin, Map, ZoomIn, ZoomOut, RotateCcw } from 'lucide-vue-next'
 
 const props = defineProps({
   // 'question' - only show start/end, 'answer' - show full path
@@ -1393,6 +1396,8 @@ onMounted(async () => {
   touch-action: none;
   resize: vertical;
   overflow: auto;
+  user-select: none;
+  -webkit-user-select: none;
 }
 
 .metro-map {
