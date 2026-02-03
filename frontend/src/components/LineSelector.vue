@@ -35,9 +35,8 @@
     </div>
 
     <div v-if="gameStore.hasSelectedLines" class="mt-4 p-4 bg-green-50 border border-green-200 rounded-lg">
-      <p class="text-green-700 flex items-center gap-1">
-        <CheckCircle class="w-5 h-5" /> 已选择 {{ gameStore.selectedLines.length }} 条线路: 
-        <span class="font-semibold">{{ gameStore.sortedSelectedLines.join(', ') }}</span>
+      <p class="text-green-700">
+        <CheckCircle class="w-5 h-5 inline-block align-text-bottom mr-1" />已选择 {{ gameStore.selectedLines.length }} 条线路: <span class="font-semibold">{{ gameStore.sortedSelectedLines.join(', ') }}</span>
       </p>
     </div>
 
