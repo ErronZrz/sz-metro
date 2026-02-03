@@ -54,7 +54,7 @@
     <div class="text-center">
       <button
         @click="handleNewGame"
-        class="px-8 py-3 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition font-medium flex items-center gap-2"
+        class="px-8 py-3 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition font-medium inline-flex items-center gap-2"
       >
         <RefreshCw class="w-5 h-5" /> 重新选站
       </button>
